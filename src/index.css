@@ -1,4 +1,8 @@
 /*! tailwindcss v4.1.3 | MIT License | https://tailwindcss.com */
+
+/* Import custom animations */
+@import './styles/animations.css';
+
 @layer properties {
   @supports (((-webkit-hyphens: none)) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color: rgb(from red r g b)))) {
     *, :before, :after, ::backdrop {

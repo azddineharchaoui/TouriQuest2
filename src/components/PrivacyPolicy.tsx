@@ -144,25 +144,25 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       {/* Header */}
-      <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-white">
+      <div className="bg-gradient-to-r from-gray-800 to-gray-900 text-black">
         <div className="container mx-auto px-6 py-16">
           <div className="max-w-4xl mx-auto text-center">
             <div className="flex items-center justify-center mb-6">
               <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                <Shield className="h-8 w-8 text-white" />
+                <Shield className="h-8 w-8 text-black" />
               </div>
             </div>
             <h1 className="text-4xl md:text-5xl font-bold mb-6">Privacy Policy</h1>
-            <p className="text-xl text-white/90 leading-relaxed max-w-3xl mx-auto">
+            <p className="text-xl text-black/90 leading-relaxed max-w-3xl mx-auto">
               Your privacy is important to us. This policy explains how TouriQuest collects, 
               uses, and protects your personal information.
             </p>
-            <p className="text-white/70 mt-4">Last updated: {lastUpdated}</p>
+            <p className="text-black/70 mt-4">Last updated: {lastUpdated}</p>
             {onBack && (
               <Button 
                 onClick={onBack}
                 variant="outline" 
-                className="mt-8 bg-white/10 border-white/30 text-white hover:bg-white/20"
+                className="mt-8 bg-white/10 border-white/30 text-black hover:bg-white/20"
               >
                 ← Back to Home
               </Button>
@@ -321,34 +321,34 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
 
         {/* Contact Information */}
         <div className="max-w-4xl mx-auto mt-12">
-          <Card className="bg-gradient-to-r from-orange-600 to-red-600 text-white">
+          <Card className="bg-gradient-to-r from-orange-600 to-red-600 text-black">
             <CardContent className="p-8">
               <h3 className="text-2xl font-bold mb-6 text-center">Questions About Your Privacy?</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="text-center">
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                    <Mail className="h-6 w-6 text-white" />
+                    <Mail className="h-6 w-6 text-black" />
                   </div>
                   <h4 className="font-semibold mb-2">Email Us</h4>
-                  <p className="text-white/90 text-sm">privacy@touriquest.com</p>
+                  <p className="text-black/90 text-sm">privacy@touriquest.com</p>
                 </div>
                 <div className="text-center">
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                    <Phone className="h-6 w-6 text-white" />
+                    <Phone className="h-6 w-6 text-black" />
                   </div>
                   <h4 className="font-semibold mb-2">Call Us</h4>
-                  <p className="text-white/90 text-sm">+212 522 123 456</p>
+                  <p className="text-black/90 text-sm">+212 522 123 456</p>
                 </div>
                 <div className="text-center">
                   <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                    <Calendar className="h-6 w-6 text-white" />
+                    <Calendar className="h-6 w-6 text-black" />
                   </div>
                   <h4 className="font-semibold mb-2">Response Time</h4>
-                  <p className="text-white/90 text-sm">Within 48 hours</p>
+                  <p className="text-black/90 text-sm">Within 48 hours</p>
                 </div>
               </div>
               <Separator className="my-6 bg-white/20" />
-              <p className="text-center text-white/90 leading-relaxed">
+              <p className="text-center text-black/90 leading-relaxed">
                 If you have any questions about this Privacy Policy or our data practices, 
                 please don't hesitate to contact our Data Protection Officer. We're committed 
                 to addressing your concerns promptly and transparently.

@@ -23,7 +23,7 @@ export function AboutUs({ onBack }: AboutUsProps) {
   const team = [
     {
       name: 'Azeddine Harchaoui',
-      role: 'Founder & CEO',
+      role: 'Co-Founder & CEO',
       bio: 'Passionate about showcasing Morocco\'s hidden gems and authentic experiences.',
       image: 'images/team/azeddine-ceo.jpg',
       location: 'Meknès, Morocco'
@@ -79,7 +79,7 @@ export function AboutUs({ onBack }: AboutUsProps) {
           <div className="max-w-4xl mx-auto text-center">
             <div className="flex items-center justify-center mb-6">
               <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
-                <Compass className="h-8 w-8 text-white" />
+                <Compass className="h-8 w-8 text-black" />
               </div>
             </div>
             <h1 className="text-4xl md:text-5xl text-green-600 font-bold mb-6">About TouriQuest</h1>
@@ -216,7 +216,7 @@ export function AboutUs({ onBack }: AboutUsProps) {
               <Button 
                 size="lg" 
                 variant="outline" 
-                className="border-white text-white hover:bg-white/10"
+                className="border-white text-black hover:bg-white/10"
               >
                 Contact Us
               </Button>

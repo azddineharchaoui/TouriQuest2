@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Layout } from './components/Layout';
-import { WelcomePage } from './components/WelcomePage';
+import WelcomePage from './components/WelcomePage';
 import { AuthFlow } from './components/AuthFlow';
 import { SearchAndBooking } from './components/SearchAndBooking';
 import { PropertyDetail } from './components/PropertyDetail';
@@ -56,7 +56,7 @@ function DevNavigationPanel({ currentState, onStateChange }: { currentState: App
     <div className="fixed top-4 right-4 z-50">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-red-600 transition-colors"
+        className="bg-red-500 text-black px-4 py-2 rounded-lg shadow-lg hover:bg-red-600 transition-colors"
       >
         🔧 Dev Nav
       </button>
@@ -384,7 +384,7 @@ function AppContent() {
               </p>
               <button 
                 onClick={() => handleNavigation('discover')}
-                className="bg-primary-teal text-white px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
+                className="bg-primary-teal text-black px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
               >
                 Explore POIs
               </button>
@@ -411,7 +411,7 @@ function AppContent() {
               </p>
               <button 
                 onClick={() => handleNavigation('ai-assistant')}
-                className="bg-primary-teal text-white px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
+                className="bg-primary-teal text-black px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
               >
                 Try AI Assistant
               </button>
@@ -538,7 +538,7 @@ function AppContent() {
                   setError(null);
                   setAppState('dashboard');
                 }}
-                className="bg-primary-teal text-white px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
+                className="bg-primary-teal text-black px-6 py-3 rounded-base hover:bg-primary-dark transition-colors"
               >
                 Try Again
               </button>
