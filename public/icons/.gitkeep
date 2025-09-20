@@ -1,0 +1,14 @@
+# Icônes et Favicons
+
+Placez ici les icônes de l'application :
+
+## Fichiers requis :
+- favicon.ico (16x16, 32x32)
+- logo-192.png (192x192 pour PWA)
+- logo-512.png (512x512 pour PWA)
+- apple-touch-icon.png (180x180)
+
+## Optionnels :
+- logo-white.svg (version blanche du logo)
+- logo-dark.svg (version sombre du logo)
+- social-preview.png (1200x630 pour réseaux sociaux)
