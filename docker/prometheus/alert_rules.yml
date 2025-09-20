@@ -1,0 +1,175 @@
+# TouriQuest Alert Rules
+groups:
+  - name: touriquest.rules
+    rules:
+    # High Error Rate
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value }} errors per second for {{ $labels.instance }}"
+
+    # High Response Time
+    - alert: HighResponseTime
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High response time detected"
+        description: "95th percentile response time is {{ $value }}s for {{ $labels.instance }}"
+
+    # Service Down
+    - alert: ServiceDown
+      expr: up == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Service is down"
+        description: "{{ $labels.instance }} has been down for more than 1 minute"
+
+    # High CPU Usage
+    - alert: HighCPUUsage
+      expr: (100 - (avg(rate(cpu_time_seconds_total{mode="idle"}[5m])) * 100)) > 80
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+    # High Memory Usage
+    - alert: HighMemoryUsage
+      expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage detected"
+        description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+
+    # Database Connection Issues
+    - alert: DatabaseConnectionHigh
+      expr: postgres_stat_database_numbackends > 80
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High database connections"
+        description: "Database has {{ $value }} active connections"
+
+    # Redis Memory Usage
+    - alert: RedisMemoryHigh
+      expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Redis memory usage high"
+        description: "Redis memory usage is {{ $value }}%"
+
+    # Elasticsearch Cluster Health
+    - alert: ElasticsearchClusterNotHealthy
+      expr: elasticsearch_cluster_health_status != 1
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Elasticsearch cluster unhealthy"
+        description: "Elasticsearch cluster health is {{ $value }}"
+
+    # API Rate Limiting
+    - alert: APIRateLimitHit
+      expr: rate(http_requests_total{status="429"}[5m]) > 0.05
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "API rate limit frequently hit"
+        description: "Rate limit hit {{ $value }} times per second for {{ $labels.instance }}"
+
+    # Failed Payments
+    - alert: HighFailedPayments
+      expr: rate(payment_transactions_total{status="failed"}[5m]) > 0.02
+      for: 3m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High payment failure rate"
+        description: "Payment failure rate is {{ $value }} per second"
+
+    # Queue Length
+    - alert: HighQueueLength
+      expr: celery_queue_length > 1000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High queue length"
+        description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks"
+
+    # Disk Space
+    - alert: DiskSpaceLow
+      expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Disk space running low"
+        description: "Disk space is {{ $value }}% full on {{ $labels.instance }}"
+
+    # SSL Certificate Expiry
+    - alert: SSLCertificateExpiry
+      expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 7
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: "SSL certificate expiring soon"
+        description: "SSL certificate for {{ $labels.instance }} expires in {{ $value }} seconds"
+
+  - name: business.rules
+    rules:
+    # Low Booking Rate
+    - alert: LowBookingRate
+      expr: rate(bookings_total[1h]) < 0.5
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Low booking rate detected"
+        description: "Booking rate is {{ $value }} bookings per hour"
+
+    # High Cancellation Rate
+    - alert: HighCancellationRate
+      expr: rate(bookings_total{status="cancelled"}[1h]) / rate(bookings_total[1h]) > 0.2
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High cancellation rate"
+        description: "Cancellation rate is {{ $value }}%"
+
+    # AI Service Errors
+    - alert: AIServiceErrors
+      expr: rate(ai_requests_total{status="error"}[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "AI service experiencing errors"
+        description: "AI service error rate is {{ $value }} per second"
+
+    # Search Performance
+    - alert: SearchPerformanceDegraded
+      expr: histogram_quantile(0.95, rate(search_duration_seconds_bucket[5m])) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Search performance degraded"
+        description: "95th percentile search time is {{ $value }}s"

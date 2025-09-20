@@ -1,2 +1,128 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+junit-*.xml
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.envrc
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Security reports
+bandit-report.json
+safety-report.json
+trivy-*.sarif
+
+# Load testing
+locust-*.html
+load-test-*.csv
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
+
+# Redis dumps
+dump.rdb
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
+
+# Backup files
+backup-*.yaml
+*.backup
+
+# Node.js (for frontend assets)
 ./node_modules
-node_modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Compiled assets
+*.min.js
+*.min.css
+
+# Media files
+media/
+uploads/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Local development
+.local/
+local/

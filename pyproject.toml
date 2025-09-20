@@ -1,0 +1,115 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = """
+    -ra
+    --strict-markers
+    --strict-config
+    --cov=src
+    --cov-report=term-missing:skip-covered
+    --cov-report=html:htmlcov
+    --cov-report=xml:coverage.xml
+    --cov-fail-under=80
+    --junitxml=junit.xml
+    """
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests",
+    "unit: marks tests as unit tests",
+    "api: marks tests as API tests",
+    "database: marks tests as database tests",
+    "auth: marks tests as authentication tests",
+    "payments: marks tests as payment tests",
+    "ai: marks tests as AI/ML tests",
+    "performance: marks tests as performance tests",
+]
+
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/env/*",
+    "*/__pycache__/*",
+    "*/alembic/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["src", "tests"]
+skip = ["migrations"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+strict_equality = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101", "B601"]
+
+[tool.bandit.assert_used]
+skips = ["*_test.py", "test_*.py"]

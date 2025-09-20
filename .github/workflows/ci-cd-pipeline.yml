@@ -1,0 +1,542 @@
+name: TouriQuest CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, 'feature/*', 'hotfix/*']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip tests (for emergency deployments)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # PRE-COMMIT CHECKS
+  # ============================================
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || contains(github.ref, 'feature/') || contains(github.ref, 'hotfix/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit black isort flake8 pylint mypy bandit safety
+
+      - name: Cache pre-commit
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+      - name: Code formatting check (Black)
+        run: black --check --diff .
+
+      - name: Import sorting check (isort)
+        run: isort --check-only --diff .
+
+      - name: Linting (flake8)
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Advanced linting (pylint)
+        run: |
+          find . -name "*.py" -path "./src/*" | xargs pylint --output-format=text --reports=no --score=no
+        continue-on-error: true
+
+      - name: Type checking (mypy)
+        run: mypy src/ --ignore-missing-imports --no-strict-optional
+        continue-on-error: true
+
+      - name: Security scanning (bandit)
+        run: bandit -r src/ -f json -o bandit-report.json
+        continue-on-error: true
+
+      - name: Dependency vulnerability check
+        run: safety check --json --output safety-report.json
+        continue-on-error: true
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
+  # ============================================
+  # TESTING PIPELINE
+  # ============================================
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: [pre-commit]
+    if: always() && (needs.pre-commit.result == 'success' || needs.pre-commit.result == 'skipped' || github.event.inputs.skip_tests == 'false')
+    
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+        test-type: [unit, integration, e2e]
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: touriquest_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      
+      elasticsearch:
+        image: elasticsearch:8.11.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: false
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+        options: >-
+          --health-cmd "curl -f http://localhost:9200/_cluster/health"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+        ports:
+          - 9200:9200
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --with dev,test
+
+      - name: Wait for services
+        run: |
+          sleep 30
+          curl -f http://localhost:9200/_cluster/health || exit 1
+          redis-cli -h localhost -p 6379 ping || exit 1
+
+      - name: Run unit tests
+        if: matrix.test-type == 'unit'
+        run: |
+          pytest tests/unit/ \
+            --cov=src/ \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term-missing \
+            --junit-xml=junit-unit.xml \
+            -v
+
+      - name: Run integration tests
+        if: matrix.test-type == 'integration'
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/touriquest_test
+          REDIS_URL: redis://localhost:6379/0
+          ELASTICSEARCH_URL: http://localhost:9200
+        run: |
+          pytest tests/integration/ \
+            --junit-xml=junit-integration.xml \
+            -v
+
+      - name: Run E2E tests
+        if: matrix.test-type == 'e2e'
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/touriquest_test
+          REDIS_URL: redis://localhost:6379/0
+          ELASTICSEARCH_URL: http://localhost:9200
+        run: |
+          pytest tests/e2e/ \
+            --junit-xml=junit-e2e.xml \
+            -v
+
+      - name: Upload coverage reports
+        if: matrix.test-type == 'unit'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.test-type }}
+          path: |
+            junit-*.xml
+            htmlcov/
+            coverage.xml
+
+  # ============================================
+  # LOAD TESTING
+  # ============================================
+  load-test:
+    name: Load Testing
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install locust
+
+      - name: Run load tests
+        run: |
+          locust -f tests/load/locustfile.py \
+            --headless \
+            --users 100 \
+            --spawn-rate 10 \
+            --run-time 5m \
+            --host https://api-staging.touriquest.com \
+            --html load-test-report.html \
+            --csv load-test-results
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: load-test-results
+          path: |
+            load-test-report.html
+            load-test-results*.csv
+
+  # ============================================
+  # BUILD PIPELINE
+  # ============================================
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    
+    strategy:
+      matrix:
+        service: [auth-service, user-service, property-service, booking-service, poi-service, experience-service, ai-service, media-service, notification-service, analytics-service, admin-service]
+        platform: [linux/amd64, linux/arm64]
+    
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/${{ matrix.service }}/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            SERVICE_NAME=${{ matrix.service }}
+
+      - name: Run container security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+
+  # ============================================
+  # DEPLOYMENT PIPELINE
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, load-test]
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment: staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/k8s-set-context@v1
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Apply database migrations
+          kubectl apply -f k8s/staging/migration-job.yaml
+          kubectl wait --for=condition=complete job/db-migration --timeout=300s
+          
+          # Deploy services with blue-green strategy
+          kubectl apply -f k8s/staging/
+          kubectl rollout status deployment --timeout=600s
+          
+          # Run health checks
+          kubectl apply -f k8s/staging/health-check-job.yaml
+          kubectl wait --for=condition=complete job/health-check --timeout=180s
+
+      - name: Verify deployment
+        run: |
+          # Check all pods are running
+          kubectl get pods -l app.kubernetes.io/instance=touriquest-staging
+          
+          # Run smoke tests
+          kubectl apply -f k8s/staging/smoke-test-job.yaml
+          kubectl wait --for=condition=complete job/smoke-test --timeout=300s
+
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/k8s-set-context@v1
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+
+      - name: Backup current deployment
+        run: |
+          kubectl get deployment -o yaml > backup-deployment-$(date +%s).yaml
+
+      - name: Deploy with blue-green strategy
+        run: |
+          # Deploy green environment
+          kubectl apply -f k8s/production/green/
+          
+          # Wait for green deployment
+          kubectl rollout status deployment -l version=green --timeout=600s
+          
+          # Run health checks on green
+          kubectl apply -f k8s/production/health-check-green.yaml
+          kubectl wait --for=condition=complete job/health-check-green --timeout=300s
+          
+          # Switch traffic to green
+          kubectl patch service touriquest-service -p '{"spec":{"selector":{"version":"green"}}}'
+          
+          # Wait and monitor
+          sleep 60
+          
+          # Scale down blue environment
+          kubectl scale deployment -l version=blue --replicas=0
+
+      - name: Run production smoke tests
+        run: |
+          kubectl apply -f k8s/production/smoke-test-job.yaml
+          kubectl wait --for=condition=complete job/smoke-test --timeout=300s
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          # Switch back to blue
+          kubectl patch service touriquest-service -p '{"spec":{"selector":{"version":"blue"}}}'
+          kubectl scale deployment -l version=blue --replicas=3
+          
+          # Clean up failed green deployment
+          kubectl delete deployment -l version=green
+
+      - name: Clean up old deployments
+        if: success()
+        run: |
+          # Remove old blue deployment after successful green deployment
+          kubectl delete deployment -l version=blue
+
+      - name: Notify teams
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          channel: '#production-alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PRODUCTION }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+      - name: Send email notification
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "TouriQuest Production Deployment - ${{ job.status }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: TouriQuest CI/CD <noreply@touriquest.com>
+          body: |
+            Deployment Status: ${{ job.status }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Workflow: ${{ github.workflow }}
+
+  # ============================================
+  # MONITORING SETUP
+  # ============================================
+  setup-monitoring:
+    name: Setup Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy monitoring stack
+        run: |
+          # Deploy Prometheus
+          kubectl apply -f k8s/monitoring/prometheus/
+          
+          # Deploy Grafana
+          kubectl apply -f k8s/monitoring/grafana/
+          
+          # Deploy AlertManager
+          kubectl apply -f k8s/monitoring/alertmanager/
+          
+          # Deploy ELK stack
+          kubectl apply -f k8s/monitoring/elasticsearch/
+          kubectl apply -f k8s/monitoring/logstash/
+          kubectl apply -f k8s/monitoring/kibana/
+          
+          # Deploy Jaeger for tracing
+          kubectl apply -f k8s/monitoring/jaeger/
+
+      - name: Configure Sentry
+        run: |
+          curl -X POST https://sentry.io/api/0/projects/${{ secrets.SENTRY_ORG }}/${{ secrets.SENTRY_PROJECT }}/releases/ \
+            -H "Authorization: Bearer ${{ secrets.SENTRY_AUTH_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"version": "${{ github.sha }}", "projects": ["${{ secrets.SENTRY_PROJECT }}"]}'
+
+  # ============================================
+  # CLEANUP
+  # ============================================
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [setup-monitoring]
+    if: always()
+    
+    steps:
+      - name: Clean up old artifacts
+        run: |
+          # Clean up old Docker images (keep last 10)
+          echo "Cleaning up old Docker images..."
+          
+      - name: Update deployment status
+        run: |
+          echo "Deployment completed at $(date)"

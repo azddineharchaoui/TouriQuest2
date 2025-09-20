@@ -1,0 +1,202 @@
+# Prometheus Configuration for TouriQuest
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'touriquest'
+    region: 'us-east-1'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alert_rules.yml"
+  - "recording_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Kubernetes API server
+  - job_name: 'kubernetes-apiserver'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+            - default
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  # Kubernetes nodes
+  - job_name: 'kubernetes-nodes'
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+
+  # Kubernetes pods
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+
+  # TouriQuest services
+  - job_name: 'touriquest-api-gateway'
+    static_configs:
+      - targets: ['api-gateway-service:8000']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-auth-service'
+    static_configs:
+      - targets: ['auth-service:8001']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-user-service'
+    static_configs:
+      - targets: ['user-service:8002']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-property-service'
+    static_configs:
+      - targets: ['property-service:8003']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-booking-service'
+    static_configs:
+      - targets: ['booking-service:8004']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-poi-service'
+    static_configs:
+      - targets: ['poi-service:8005']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-experience-service'
+    static_configs:
+      - targets: ['experience-service:8006']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-ai-service'
+    static_configs:
+      - targets: ['ai-service:8007']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-media-service'
+    static_configs:
+      - targets: ['media-service:8008']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-notification-service'
+    static_configs:
+      - targets: ['notification-service:8009']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-analytics-service'
+    static_configs:
+      - targets: ['analytics-service:8010']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: 'touriquest-admin-service'
+    static_configs:
+      - targets: ['admin-service:8011']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Infrastructure components
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics
+
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: /metrics
+
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['elasticsearch:9200']
+    metrics_path: /_prometheus/metrics
+
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:9113']
+    metrics_path: /metrics
+
+  # Node Exporter for system metrics
+  - job_name: 'node-exporter'
+    kubernetes_sd_configs:
+      - role: endpoints
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_endpoints_name]
+        regex: 'node-exporter'
+        action: keep
+
+  # Blackbox exporter for external monitoring
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://api.touriquest.com/health
+        - https://www.touriquest.com
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

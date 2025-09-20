@@ -1,0 +1,298 @@
+# =============================================================================
+# TouriQuest Production Environment
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # LOAD BALANCER & REVERSE PROXY
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: touriquest-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - static_files:/var/www/static
+    depends_on:
+      - api-gateway
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # APPLICATION SERVICES
+  # =============================================================================
+  api-gateway:
+    image: ghcr.io/azddineharchaoui/touriquest2/api-gateway:latest
+    container_name: touriquest-api-gateway-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  auth-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/auth-service:latest
+    container_name: touriquest-auth-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - OAUTH_GOOGLE_CLIENT_ID=${OAUTH_GOOGLE_CLIENT_ID}
+      - OAUTH_GOOGLE_CLIENT_SECRET=${OAUTH_GOOGLE_CLIENT_SECRET}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  user-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/user-service:latest
+    container_name: touriquest-user-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  property-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/property-service:latest
+    container_name: touriquest-property-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+  booking-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/booking-service:latest
+    container_name: touriquest-booking-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  poi-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/poi-service:latest
+    container_name: touriquest-poi-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  experience-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/experience-service:latest
+    container_name: touriquest-experience-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  ai-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/ai-service:latest
+    container_name: touriquest-ai-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  media-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/media-service:latest
+    container_name: touriquest-media-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - CLOUDFRONT_DOMAIN=${CLOUDFRONT_DOMAIN}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  notification-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/notification-service:latest
+    container_name: touriquest-notification-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - FIREBASE_CREDENTIALS=${FIREBASE_CREDENTIALS}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  analytics-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/analytics-service:latest
+    container_name: touriquest-analytics-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  admin-service:
+    image: ghcr.io/azddineharchaoui/touriquest2/admin-service:latest
+    container_name: touriquest-admin-service-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  # =============================================================================
+  # WORKER SERVICES
+  # =============================================================================
+  celery-worker:
+    image: ghcr.io/azddineharchaoui/touriquest2/celery-worker:latest
+    container_name: touriquest-celery-worker-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+  celery-beat:
+    image: ghcr.io/azddineharchaoui/touriquest2/celery-beat:latest
+    container_name: touriquest-celery-beat-prod
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  # =============================================================================
+  # FRONTEND
+  # =============================================================================
+  frontend:
+    image: ghcr.io/azddineharchaoui/touriquest2/frontend:latest
+    container_name: touriquest-frontend-prod
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=https://api.touriquest.com
+      - REACT_APP_SENTRY_DSN=${FRONTEND_SENTRY_DSN}
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+# =============================================================================
+# NETWORKS & VOLUMES
+# =============================================================================
+networks:
+  touriquest-network:
+    driver: bridge
+
+volumes:
+  static_files:
+    driver: local

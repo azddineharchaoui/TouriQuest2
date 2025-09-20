@@ -1,0 +1,241 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: touriquest-staging
+  labels:
+    name: touriquest-staging
+    environment: staging
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: touriquest-secrets
+  namespace: touriquest-staging
+type: Opaque
+data:
+  database-url: <base64-encoded-database-url>
+  jwt-secret-key: <base64-encoded-jwt-secret>
+  stripe-secret-key: <base64-encoded-stripe-secret>
+  openai-api-key: <base64-encoded-openai-key>
+  sentry-dsn: <base64-encoded-sentry-dsn>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: touriquest-config
+  namespace: touriquest-staging
+data:
+  ENVIRONMENT: "staging"
+  LOG_LEVEL: "INFO"
+  REDIS_URL: "redis://redis-service:6379/0"
+  ELASTICSEARCH_URL: "http://elasticsearch-service:9200"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: touriquest-staging
+  labels:
+    app: api-gateway
+    version: blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        version: blue
+    spec:
+      containers:
+      - name: api-gateway
+        image: ghcr.io/azddineharchaoui/touriquest2/api-gateway:staging
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: touriquest-config
+              key: ENVIRONMENT
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: touriquest-secrets
+              key: database-url
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: touriquest-secrets
+              key: jwt-secret-key
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: touriquest-config
+              key: REDIS_URL
+        - name: SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              name: touriquest-secrets
+              key: sentry-dsn
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+  namespace: touriquest-staging
+spec:
+  selector:
+    app: api-gateway
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: touriquest-staging
+  labels:
+    app: auth-service
+    version: blue
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        version: blue
+    spec:
+      containers:
+      - name: auth-service
+        image: ghcr.io/azddineharchaoui/touriquest2/auth-service:staging
+        ports:
+        - containerPort: 8001
+        envFrom:
+        - configMapRef:
+            name: touriquest-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: touriquest-secrets
+              key: database-url
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: touriquest-secrets
+              key: jwt-secret-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: touriquest-staging
+spec:
+  selector:
+    app: auth-service
+  ports:
+  - protocol: TCP
+    port: 8001
+    targetPort: 8001
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: touriquest-ingress
+  namespace: touriquest-staging
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+  - hosts:
+    - api-staging.touriquest.com
+    secretName: touriquest-staging-tls
+  rules:
+  - host: api-staging.touriquest.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway-service
+            port:
+              number: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway-hpa
+  namespace: touriquest-staging
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

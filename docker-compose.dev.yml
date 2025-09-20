@@ -1,0 +1,275 @@
+# =============================================================================
+# TouriQuest Development Environment
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # DATABASES
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: touriquest-postgres-dev
+    environment:
+      POSTGRES_DB: touriquest_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: touriquest-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/etc/redis/redis.conf
+    command: redis-server /etc/redis/redis.conf
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Elasticsearch for search
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: touriquest-elasticsearch-dev
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # MESSAGE QUEUE
+  # =============================================================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: touriquest-rabbitmq-dev
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # MONITORING & OBSERVABILITY
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: touriquest-prometheus-dev
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - touriquest-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: touriquest-grafana-dev
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - touriquest-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: touriquest-jaeger-dev
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    networks:
+      - touriquest-network
+
+  # =============================================================================
+  # DEVELOPMENT SERVICES
+  # =============================================================================
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: touriquest-mailhog-dev
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - touriquest-network
+
+  # MinIO for S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: touriquest-minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # =============================================================================
+  # APPLICATION SERVICES (BACKEND)
+  # =============================================================================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./docker/api-gateway/Dockerfile.dev
+    container_name: touriquest-api-gateway-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/0
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+      - elasticsearch
+    networks:
+      - touriquest-network
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./docker/auth-service/Dockerfile.dev
+    container_name: touriquest-auth-service-dev
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/1
+      - JWT_SECRET_KEY=dev-jwt-secret-key
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - touriquest-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./docker/user-service/Dockerfile.dev
+    container_name: touriquest-user-service-dev
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/2
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - touriquest-network
+
+  # =============================================================================
+  # FRONTEND (for full-stack development)
+  # =============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: ./docker/frontend/Dockerfile.dev
+    container_name: touriquest-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:8000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - touriquest-network
+
+# =============================================================================
+# NETWORKS & VOLUMES
+# =============================================================================
+networks:
+  touriquest-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  minio_data:
+    driver: local
