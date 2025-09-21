@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-ai-service-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ai_logs:/app/logs
+      - ai_temp:/app/temp
+      - ai_uploads:/app/uploads
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/touriquest_ai_dev
+      - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: touriquest-postgres-dev
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=touriquest_ai_dev
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: touriquest-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+
+  # Optional: PgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: touriquest-pgadmin-dev
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@touriquest.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    profiles:
+      - tools
+
+  # Optional: Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: touriquest-redis-commander-dev
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - touriquest-network
+    restart: unless-stopped
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+  ai_logs:
+  ai_temp:
+  ai_uploads:
+
+networks:
+  touriquest-network:
+    driver: bridge

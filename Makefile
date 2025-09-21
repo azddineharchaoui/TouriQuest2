@@ -28,7 +28,7 @@ setup-dev: ## Set up development environment with Docker Compose
 ## Install Python dependencies
 install: ## Install Python dependencies with Poetry
 	@echo "$(YELLOW)Installing Python dependencies...$(NC)"
-	@poetry install --with dev,test
+	@poetry install --with dev
 	@pre-commit install
 
 ## Format code

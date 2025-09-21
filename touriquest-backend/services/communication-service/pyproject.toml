@@ -1,0 +1,113 @@
+[build-system]
+requires = [ "poetry-core",]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "communication-service"
+version = "1.0.0"
+description = "TouriQuest real-time communication service with chat, WebSocket, and notification features"
+authors = [ "TouriQuest Team <dev@touriquest.com>",]
+readme = "README.md"
+package-mode = false
+
+[tool.black]
+line-length = 100
+target-version = [ "py311",]
+include = "\\.pyi?$"
+extend-exclude = "/(\n  # directories\n  \\.eggs\n  | \\.git\n  | \\.hg\n  | \\.mypy_cache\n  | \\.tox\n  | \\.venv\n  | build\n  | dist\n)/\n"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.1"
+sqlalchemy = "^2.0.23"
+alembic = "^1.12.1"
+asyncpg = "^0.29.0"
+redis = "^5.0.1"
+pydantic-settings = "^2.1.0"
+python-multipart = "^0.0.6"
+aiofiles = "^23.2.1"
+httpx = "^0.25.2"
+celery = "^5.3.4"
+websockets = "^12.0"
+python-socketio = "^5.10.0"
+cryptography = "^41.0.7"
+pycryptodome = "^3.19.0"
+aiobotocore = "^2.7.0"
+google-cloud-translate = "^3.12.1"
+twilio = "^8.10.3"
+firebase-admin = "^6.2.0"
+pusher = "^3.3.2"
+langdetect = "^1.0.9"
+profanity-check = "^1.0.3"
+better-profanity = "^0.7.0"
+openai = "^1.3.7"
+anthropic = "^0.7.7"
+sentence-transformers = "^2.2.2"
+opencv-python-headless = "^4.8.1.78"
+pillow = "^10.1.0"
+moviepy = "^1.0.3"
+librosa = "^0.10.1"
+speechrecognition = "^3.10.0"
+gtts = "^2.4.0"
+python-telegram-bot = "^20.7"
+slack-sdk = "^3.23.0"
+discord-py = "^2.3.2"
+# agora-python-server-sdk = "^1.0.0"  # Package doesn't exist in PyPI
+# jitsi-python-sdk = "^1.0.0"  # Package doesn't exist in PyPI
+zoomus = "^1.1.5"  # Zoom API client
+prometheus-client = "^0.19.0"
+structlog = "^23.2.0"
+psutil = "^5.9.6"
+tenacity = "^8.2.3"
+schedule = "^1.2.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [ "tests",]
+python_files = [ "test_*.py",]
+python_classes = [ "Test*",]
+python_functions = [ "test_*",]
+addopts = [ "--cov=app", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=80",]
+
+[tool.poetry.dependencies.uvicorn]
+extras = [ "standard",]
+version = "^0.24.0"
+
+[tool.poetry.dependencies.pydantic]
+extras = [ "email",]
+version = "^2.5.0"
+
+[tool.poetry.dependencies.python-jose]
+extras = [ "cryptography",]
+version = "^3.3.0"
+
+[tool.poetry.dependencies.passlib]
+extras = [ "bcrypt",]
+version = "^1.7.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+black = "^23.11.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.7.1"
+pre-commit = "^3.6.0"
+httpx = "^0.25.2"

@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import { Badge } from './ui/badge';
+import api from '../api';
+import { tokenManager } from '../utils/tokenManager';
 import { 
   ArrowRight, 
   ArrowLeft, 
@@ -48,6 +50,51 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
   const [step, setStep] = useState<AuthStep>('signup');
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>(1);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  
+  // Form data states
+  const [loginData, setLoginData] = useState({
+    email: '',
+    password: '',
+    rememberMe: false
+  });
+  
+  const [signupData, setSignupData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    dateOfBirth: '',
+    termsAccepted: false,
+    marketingConsent: false
+  });
+  
+  const [resetPasswordData, setResetPasswordData] = useState({
+    email: '',
+    token: '',
+    password: '',
+    confirmPassword: ''
+  });
+  
+  const [twoFactorData, setTwoFactorData] = useState({
+    code: '',
+    backupCode: '',
+    secret: '',
+    qrCode: '',
+    backupCodes: []
+  });
+  
+  const [oauthData, setOauthData] = useState({
+    provider: '',
+    accessToken: '',
+    idToken: ''
+  });
+  
+  // Previous state variables
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [preferences, setPreferences] = useState({
@@ -70,13 +117,342 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
     'Q7R8S9T0', 'U1V2W3X4', 'Y5Z6A7B8', 'C9D0E1F2'
   ]);
 
-  const getPasswordStrength = (password: string) => {
+  // Password strength validation
+  const getPasswordStrength = (password: string): number => {
     let strength = 0;
     if (password.length >= 8) strength++;
+    if (/[a-z]/.test(password)) strength++;
     if (/[A-Z]/.test(password)) strength++;
     if (/[0-9]/.test(password)) strength++;
-    if (/[^A-Za-z0-9]/.test(password)) strength++;
+    if (/[^a-zA-Z0-9]/.test(password)) strength++;
     return strength;
+  };
+
+  // Authentication handlers
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.login({
+        email: loginData.email,
+        password: loginData.password,
+        rememberMe: loginData.rememberMe
+      });
+      
+      if (response.success) {
+        // Store tokens and user data using token manager
+        tokenManager.setToken({
+          accessToken: response.data.tokens.accessToken,
+          refreshToken: response.data.tokens.refreshToken,
+          expiresAt: Date.now() + (response.data.tokens.expiresIn * 1000),
+          tokenType: response.data.tokens.tokenType || 'Bearer'
+        }, {
+          id: response.data.user.id,
+          email: response.data.user.email,
+          firstName: response.data.user.firstName,
+          lastName: response.data.user.lastName,
+          phoneNumber: response.data.user.phoneNumber,
+          avatar: response.data.user.avatar,
+          isEmailVerified: response.data.user.isVerified,
+          isTwoFactorEnabled: response.data.user.twoFactorEnabled,
+          role: response.data.user.role,
+          preferences: {
+            language: response.data.user.preferredLanguage,
+            currency: response.data.user.preferredCurrency,
+            notifications: response.data.user.preferences.notifications
+          }
+        });
+        
+        setSuccess('Login successful! Redirecting...');
+        
+        // Check if user needs to complete onboarding
+        const profile = await api.auth.getProfile();
+        if (profile.success && !profile.data.onboardingCompleted) {
+          setStep('onboarding');
+        } else if (profile.data.twoFactorEnabled) {
+          setStep('2fa-verify');
+        } else {
+          setTimeout(() => onComplete(), 1500);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    // Validate form
+    if (signupData.password !== signupData.confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+    
+    if (!signupData.termsAccepted) {
+      setError('Please accept the terms and conditions');
+      setLoading(false);
+      return;
+    }
+    
+    const passwordStrength = getPasswordStrength(signupData.password);
+    if (passwordStrength < 2) {
+      setError('Password is too weak. Please use a stronger password.');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const response = await api.auth.register({
+        firstName: signupData.firstName,
+        lastName: signupData.lastName,
+        email: signupData.email,
+        password: signupData.password,
+        dateOfBirth: signupData.dateOfBirth,
+        termsAccepted: signupData.termsAccepted,
+        marketingConsent: signupData.marketingConsent
+      });
+      
+      if (response.success) {
+        setSuccess('Account created successfully! Please verify your email.');
+        setStep('verify');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.forgotPassword({
+        email: resetPasswordData.email
+      });
+      
+      if (response.success) {
+        setSuccess('Password reset instructions sent to your email!');
+        setStep('forgot-confirm');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to send reset email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    if (resetPasswordData.password !== resetPasswordData.confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+    
+    const passwordStrength = getPasswordStrength(resetPasswordData.password);
+    if (passwordStrength < 2) {
+      setError('Password is too weak. Please use a stronger password.');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const response = await api.auth.resetPassword({
+        token: resetPasswordData.token,
+        password: resetPasswordData.password,
+        confirmPassword: resetPasswordData.confirmPassword
+      });
+      
+      if (response.success) {
+        setSuccess('Password reset successfully!');
+        setStep('forgot-success');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailVerification = async () => {
+    setLoading(true);
+    setError(null);
+    
+    const code = verificationCode.join('');
+    if (code.length !== 6) {
+      setError('Please enter the complete verification code');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const response = await api.auth.verifyEmail({
+        token: code
+      });
+      
+      if (response.success) {
+        setSuccess('Email verified successfully!');
+        setStep('onboarding');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Invalid verification code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.resendVerification({
+        email: loginData.email || signupData.email
+      });
+      
+      if (response.success) {
+        setSuccess('Verification code sent!');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuthLogin = async (provider: 'google' | 'facebook' | 'apple') => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // In a real implementation, you would initiate OAuth flow here
+      // For now, we'll simulate the OAuth callback
+      const response = await api.auth.oauthLogin(provider, {
+        provider: provider,
+        accessToken: oauthData.accessToken,
+        idToken: oauthData.idToken
+      });
+      
+      if (response.success) {
+        setSuccess(`${provider.charAt(0).toUpperCase() + provider.slice(1)} login successful!`);
+        setTimeout(() => onComplete(), 1500);
+      }
+    } catch (err: any) {
+      setError(err.message || `${provider} login failed. Please try again.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetupTwoFactor = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.setup2FA({
+        password: password // Current password for verification
+      });
+      
+      if (response.success) {
+        setTwoFactorData({
+          ...twoFactorData,
+          secret: response.data.secret,
+          qrCode: response.data.qrCode,
+          backupCodes: response.data.backupCodes
+        });
+        setSuccess('Two-factor authentication setup initiated!');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to setup two-factor authentication.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyTwoFactor = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.verify2FA({
+        code: twoFactorData.code,
+        password: password
+      });
+      
+      if (response.success) {
+        setSuccess('Two-factor authentication verified!');
+        setStep('2fa-backup');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Invalid verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteOnboarding = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await api.auth.completeOnboarding({
+        step: 'preferences',
+        data: {
+          interests: preferences.interests,
+          budget: preferences.budget,
+          travelFrequency: preferences.frequency,
+          notifications: preferences.notifications
+        }
+      });
+      
+      if (response.success) {
+        setSuccess('Welcome to TouriQuest! Your profile is complete.');
+        setTimeout(() => onComplete(), 2000);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to complete onboarding.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setLoading(true);
+    
+    try {
+      await api.auth.logout();
+      // Clear any local state
+      setLoginData({ email: '', password: '', rememberMe: false });
+      setSignupData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        dateOfBirth: '',
+        termsAccepted: false,
+        marketingConsent: false
+      });
+      setStep('login');
+    } catch (err: any) {
+      console.error('Logout error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const passwordStrength = getPasswordStrength(password);
@@ -111,15 +487,27 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
         <p className="text-muted-foreground">Sign in to your TouriQuest account</p>
       </div>
 
-      <div className="space-y-6">
+      {error && (
+        <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-sm text-green-700">{success}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleLogin} className="space-y-6">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
             id="email"
             type="email"
             placeholder="Enter your email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={loginData.email}
+            onChange={(e) => setLoginData({...loginData, email: e.target.value})}
           />
         </div>
 
@@ -130,8 +518,8 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               id="password"
               type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={loginData.password}
+              onChange={(e) => setLoginData({...loginData, password: e.target.value})}
             />
             <button
               type="button"
@@ -145,10 +533,15 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
 
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Checkbox id="remember" />
+            <Checkbox 
+              id="remember" 
+              checked={loginData.rememberMe}
+              onCheckedChange={(checked) => setLoginData({...loginData, rememberMe: !!checked})}
+            />
             <Label htmlFor="remember" className="text-sm">Remember me</Label>
           </div>
           <button
+            type="button"
             onClick={() => setStep('forgot')}
             className="text-sm text-primary hover:underline"
           >
@@ -156,10 +549,17 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
           </button>
         </div>
 
-        <Button className="w-full" onClick={onComplete}>
-          Sign In
+        <Button 
+          className="w-full" 
+          onClick={handleLogin}
+          disabled={loading || !loginData.email || !loginData.password}
+          type="submit"
+        >
+          {loading ? 'Signing in...' : 'Sign In'}
         </Button>
+      </form>
 
+      <div className="space-y-6">
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-border" />
@@ -232,11 +632,21 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="firstName">First name</Label>
-            <Input id="firstName" placeholder="John" />
+            <Input 
+              id="firstName" 
+              placeholder="John" 
+              value={signupData.firstName}
+              onChange={(e) => setSignupData({...signupData, firstName: e.target.value})}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="lastName">Last name</Label>
-            <Input id="lastName" placeholder="Doe" />
+            <Input 
+              id="lastName" 
+              placeholder="Doe" 
+              value={signupData.lastName}
+              onChange={(e) => setSignupData({...signupData, lastName: e.target.value})}
+            />
           </div>
         </div>
 
@@ -247,15 +657,15 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               id="email"
               type="email"
               placeholder="john@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={email && !/\S+@\S+\.\S+/.test(email) ? 'border-destructive' : ''}
+              value={signupData.email}
+              onChange={(e) => setSignupData({...signupData, email: e.target.value})}
+              className={signupData.email && !/\S+@\S+\.\S+/.test(signupData.email) ? 'border-destructive' : ''}
             />
-            {email && /\S+@\S+\.\S+/.test(email) && (
+            {signupData.email && /\S+@\S+\.\S+/.test(signupData.email) && (
               <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-success" />
             )}
           </div>
-          {email && !/\S+@\S+\.\S+/.test(email) && (
+          {signupData.email && !/\S+@\S+\.\S+/.test(signupData.email) && (
             <p className="text-xs text-destructive flex items-center">
               <AlertCircle className="w-3 h-3 mr-1" />
               Please enter a valid email address
@@ -270,8 +680,8 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               id="password"
               type={showPassword ? 'text' : 'password'}
               placeholder="Create a strong password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={signupData.password}
+              onChange={(e) => setSignupData({...signupData, password: e.target.value})}
             />
             <button
               type="button"
@@ -281,27 +691,32 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          {password && (
+          {signupData.password && (
             <div className="space-y-2">
               <div className="flex space-x-1">
                 {[0, 1, 2, 3].map((index) => (
                   <div
                     key={index}
                     className={`h-1 flex-1 rounded ${
-                      index < passwordStrength ? strengthColors[passwordStrength - 1] : 'bg-muted'
+                      index < getPasswordStrength(signupData.password) ? strengthColors[getPasswordStrength(signupData.password) - 1] : 'bg-muted'
                     }`}
                   />
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Password strength: {strengthLabels[passwordStrength - 1] || 'Too weak'}
+                Password strength: {strengthLabels[getPasswordStrength(signupData.password) - 1] || 'Too weak'}
               </p>
             </div>
           )}
         </div>
 
         <div className="flex items-start space-x-2">
-          <Checkbox id="terms" className="mt-1" />
+          <Checkbox 
+            id="terms" 
+            className="mt-1" 
+            checked={signupData.termsAccepted}
+            onCheckedChange={(checked) => setSignupData({...signupData, termsAccepted: !!checked})}
+          />
           <Label htmlFor="terms" className="text-sm leading-relaxed">
             I agree to the{' '}
             <a href="#" className="text-primary hover:underline">Terms of Service</a>
@@ -312,10 +727,10 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
 
         <Button 
           className="w-full" 
-          onClick={() => setStep('verify')}
-          disabled={!email || !/\S+@\S+\.\S+/.test(email) || !password || getPasswordStrength(password) < 2}
+          onClick={handleSignup}
+          disabled={loading || !signupData.email || !signupData.password || !signupData.firstName || !signupData.lastName || getPasswordStrength(signupData.password) < 2}
         >
-          Create Account
+          {loading ? 'Creating Account...' : 'Create Account'}
         </Button>
 
         <div className="relative">
@@ -328,20 +743,30 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
         </div>
 
         <div className="space-y-3">
-          <Button variant="outline" className="w-full">
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={() => handleOAuthLogin('google')}
+            disabled={loading}
+          >
             <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
               <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
               <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
-            Sign up with Google
+            {loading ? 'Connecting...' : 'Sign up with Google'}
           </Button>
-          <Button variant="outline" className="w-full">
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={() => handleOAuthLogin('facebook')}
+            disabled={loading}
+          >
             <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
               <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
             </svg>
-            Sign up with Facebook
+            {loading ? 'Connecting...' : 'Sign up with Facebook'}
           </Button>
         </div>
 
@@ -363,13 +788,48 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
       
       <h2 className="text-2xl font-bold mb-4">Verify your email</h2>
       <p className="text-muted-foreground mb-6">
-        We sent a verification link to<br />
-        <span className="font-medium">{email}</span><br />
-        Check your inbox and click the link to continue
+        We sent a verification code to<br />
+        <span className="font-medium">{signupData.email || loginData.email}</span><br />
+        Enter the 6-digit code below
       </p>
       
-      <Button className="w-full mb-4" onClick={() => setStep('2fa-setup')}>
-        I've verified my email
+      <div className="flex justify-center space-x-2 mb-6">
+        {verificationCode.map((digit, index) => (
+          <Input
+            key={index}
+            type="text"
+            maxLength={1}
+            value={digit}
+            onChange={(e) => {
+              const newCode = [...verificationCode];
+              newCode[index] = e.target.value;
+              setVerificationCode(newCode);
+              
+              // Auto-focus next input
+              if (e.target.value && index < 5) {
+                const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
+                nextInput?.focus();
+              }
+            }}
+            onKeyDown={(e) => {
+              // Auto-focus previous input on backspace
+              if (e.key === 'Backspace' && !digit && index > 0) {
+                const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
+                prevInput?.focus();
+              }
+            }}
+            data-index={index}
+            className="w-12 h-12 text-center text-lg font-mono"
+          />
+        ))}
+      </div>
+      
+      <Button 
+        className="w-full mb-4" 
+        onClick={handleEmailVerification}
+        disabled={loading || verificationCode.some(digit => !digit)}
+      >
+        {loading ? 'Verifying...' : 'Verify Email'}
       </Button>
       
       <p className="text-sm text-muted-foreground mb-4">
@@ -377,9 +837,14 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
       </p>
       
       <div className="space-y-3">
-        <Button variant="outline" className="w-full">
+        <Button 
+          variant="outline" 
+          className="w-full"
+          onClick={handleResendVerification}
+          disabled={loading}
+        >
           <RefreshCw className="w-4 h-4 mr-2" />
-          Resend verification email
+          {loading ? 'Sending...' : 'Resend verification email'}
         </Button>
         
         <Button variant="ghost" className="w-full text-xs">
@@ -763,8 +1228,12 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
-              <Button onClick={onComplete} className="bg-primary hover:bg-primary/90">
-                Complete Setup
+              <Button 
+                onClick={handleCompleteOnboarding} 
+                className="bg-primary hover:bg-primary/90"
+                disabled={loading}
+              >
+                {loading ? 'Completing...' : 'Complete Setup'}
                 <Check className="w-4 h-4 ml-2" />
               </Button>
             </div>
@@ -789,13 +1258,17 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
             id="resetEmail"
             type="email"
             placeholder="Enter your email"
-            value={resetEmail}
-            onChange={(e) => setResetEmail(e.target.value)}
+            value={resetPasswordData.email}
+            onChange={(e) => setResetPasswordData({...resetPasswordData, email: e.target.value})}
           />
         </div>
 
-        <Button className="w-full" onClick={() => setStep('forgot-confirm')}>
-          Send reset link
+        <Button 
+          className="w-full" 
+          onClick={handleForgotPassword}
+          disabled={loading || !resetPasswordData.email}
+        >
+          {loading ? 'Sending...' : 'Send reset link'}
         </Button>
 
         <p className="text-center text-sm text-muted-foreground">
@@ -852,8 +1325,8 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               id="newPassword"
               type={showPassword ? 'text' : 'password'}
               placeholder="Create a strong password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              value={resetPasswordData.password}
+              onChange={(e) => setResetPasswordData({...resetPasswordData, password: e.target.value})}
             />
             <button
               type="button"
@@ -863,20 +1336,20 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          {newPassword && (
+          {resetPasswordData.password && (
             <div className="space-y-2">
               <div className="flex space-x-1">
                 {[0, 1, 2, 3].map((index) => (
                   <div
                     key={index}
                     className={`h-1 flex-1 rounded ${
-                      index < getPasswordStrength(newPassword) ? strengthColors[getPasswordStrength(newPassword) - 1] : 'bg-muted'
+                      index < getPasswordStrength(resetPasswordData.password) ? strengthColors[getPasswordStrength(resetPasswordData.password) - 1] : 'bg-muted'
                     }`}
                   />
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Password strength: {strengthLabels[getPasswordStrength(newPassword) - 1] || 'Too weak'}
+                Password strength: {strengthLabels[getPasswordStrength(resetPasswordData.password) - 1] || 'Too weak'}
               </p>
             </div>
           )}
@@ -888,10 +1361,10 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
             id="confirmPassword"
             type="password"
             placeholder="Confirm your password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            value={resetPasswordData.confirmPassword}
+            onChange={(e) => setResetPasswordData({...resetPasswordData, confirmPassword: e.target.value})}
           />
-          {confirmPassword && newPassword !== confirmPassword && (
+          {resetPasswordData.confirmPassword && resetPasswordData.password !== resetPasswordData.confirmPassword && (
             <p className="text-xs text-destructive flex items-center">
               <X className="w-3 h-3 mr-1" />
               Passwords don't match
@@ -903,19 +1376,19 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
           <h4 className="text-sm font-medium">Password requirements:</h4>
           <div className="space-y-1 text-xs text-muted-foreground">
             <div className="flex items-center space-x-2">
-              <Check className={`w-3 h-3 ${newPassword.length >= 8 ? 'text-success' : 'text-muted-foreground'}`} />
+              <Check className={`w-3 h-3 ${resetPasswordData.password.length >= 8 ? 'text-success' : 'text-muted-foreground'}`} />
               <span>At least 8 characters</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Check className={`w-3 h-3 ${/[A-Z]/.test(newPassword) ? 'text-success' : 'text-muted-foreground'}`} />
+              <Check className={`w-3 h-3 ${/[A-Z]/.test(resetPasswordData.password) ? 'text-success' : 'text-muted-foreground'}`} />
               <span>One uppercase letter</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Check className={`w-3 h-3 ${/[0-9]/.test(newPassword) ? 'text-success' : 'text-muted-foreground'}`} />
+              <Check className={`w-3 h-3 ${/[0-9]/.test(resetPasswordData.password) ? 'text-success' : 'text-muted-foreground'}`} />
               <span>One number</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Check className={`w-3 h-3 ${/[^A-Za-z0-9]/.test(newPassword) ? 'text-success' : 'text-muted-foreground'}`} />
+              <Check className={`w-3 h-3 ${/[^A-Za-z0-9]/.test(resetPasswordData.password) ? 'text-success' : 'text-muted-foreground'}`} />
               <span>One special character</span>
             </div>
           </div>
@@ -923,10 +1396,10 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
 
         <Button 
           className="w-full" 
-          onClick={() => setStep('forgot-success')}
-          disabled={!newPassword || !confirmPassword || newPassword !== confirmPassword || getPasswordStrength(newPassword) < 3}
+          onClick={handleResetPassword}
+          disabled={loading || !resetPasswordData.password || !resetPasswordData.confirmPassword || resetPasswordData.password !== resetPasswordData.confirmPassword || getPasswordStrength(resetPasswordData.password) < 3}
         >
-          Update password
+          {loading ? 'Updating...' : 'Update password'}
         </Button>
 
         <p className="text-center text-sm text-muted-foreground">
@@ -1030,6 +1503,7 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
                 const newCode = [...verificationCode];
                 newCode[index] = e.target.value;
                 setVerificationCode(newCode);
+                setTwoFactorData({...twoFactorData, code: newCode.join('')});
                 
                 // Auto-focus next input
                 if (e.target.value && index < 5) {
@@ -1043,10 +1517,10 @@ export function AuthFlow({ onComplete, onBack }: AuthFlowProps) {
 
         <Button 
           className="w-full" 
-          onClick={() => setStep('2fa-backup')}
-          disabled={verificationCode.some(digit => !digit)}
+          onClick={handleVerifyTwoFactor}
+          disabled={loading || verificationCode.some(digit => !digit)}
         >
-          Verify code
+          {loading ? 'Verifying...' : 'Verify code'}
         </Button>
 
         <div className="text-center space-y-2">

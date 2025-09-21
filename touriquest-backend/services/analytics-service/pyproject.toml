@@ -1,0 +1,95 @@
+[build-system]
+requires = [ "poetry-core",]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "analytics-service"
+version = "1.0.0"
+description = "TouriQuest Analytics Service - Comprehensive analytics, reporting, and business intelligence"
+authors = [ "TouriQuest Team <dev@touriquest.com>",]
+readme = "README.md"
+package-mode = false
+
+[tool.black]
+line-length = 88
+target-version = [ "py311",]
+include = "\\.pyi?$"
+extend-exclude = "/(\n  # directories\n  \\.eggs\n  | \\.git\n  | \\.hg\n  | \\.mypy_cache\n  | \\.tox\n  | \\.venv\n  | build\n  | dist\n)/\n"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.0"
+sqlalchemy = "^2.0.23"
+asyncpg = "^0.29.0"
+alembic = "^1.12.1"
+redis = "^5.0.1"
+pydantic-settings = "^2.1.0"
+python-multipart = "^0.0.6"
+celery = "^5.3.4"
+httpx = "^0.25.2"
+structlog = "^23.2.0"
+prometheus-client = "^0.19.0"
+pandas = "^2.1.4"
+numpy = "^1.25.2"
+plotly = "^5.17.0"
+openpyxl = "^3.1.2"
+python-dateutil = "^2.8.2"
+psycopg2-binary = "^2.9.9"
+asyncio-mqtt = "^0.16.1"
+websockets = "^12.0"
+aiofiles = "^23.2.1"
+schedule = "^1.2.0"
+pytz = "^2023.3"
+
+[tool.pytest.ini_options]
+testpaths = [ "tests",]
+python_files = [ "test_*.py", "*_test.py",]
+python_classes = [ "Test*",]
+python_functions = [ "test_*",]
+addopts = "-v --cov=app --cov-report=term-missing --cov-report=html"
+asyncio_mode = "auto"
+
+[tool.poetry.dependencies.uvicorn]
+extras = [ "standard",]
+version = "^0.24.0"
+
+[tool.poetry.dependencies.pydantic]
+extras = [ "email",]
+version = "^2.5.0"
+
+[tool.poetry.dependencies.python-jose]
+extras = [ "cryptography",]
+version = "^3.3.0"
+
+[tool.poetry.dependencies.passlib]
+extras = [ "bcrypt",]
+version = "^1.7.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+black = "^23.11.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.7.0"
+pre-commit = "^3.5.0"
+httpx = "^0.25.2"
+pytest-mock = "^3.12.0"

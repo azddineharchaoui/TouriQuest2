@@ -1,8 +1,7 @@
 # =============================================================================
-# TouriQuest Development Environment
+# TouriQuest Development Environment - FIXED VERSION
 # =============================================================================
 
-version: '3.8'
 
 services:
   # =============================================================================
@@ -114,7 +113,7 @@ services:
     image: grafana/grafana:latest
     container_name: touriquest-grafana-dev
     ports:
-      - "3000:3000"
+      - "3001:3000"  # Changed from 3000 to avoid conflict with frontend
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
@@ -168,12 +167,14 @@ services:
       retries: 3
 
   # =============================================================================
-  # APPLICATION SERVICES (BACKEND)
+  # APPLICATION SERVICES (BACKEND MICROSERVICES)
   # =============================================================================
+  
+  # API Gateway - Entry point for all requests
   api-gateway:
     build:
-      context: .
-      dockerfile: ./docker/api-gateway/Dockerfile.dev
+      context: ./touriquest-backend/services/api-gateway
+      dockerfile: Dockerfile.dev
     container_name: touriquest-api-gateway-dev
     ports:
       - "8000:8000"
@@ -182,21 +183,35 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
       - REDIS_URL=redis://redis:6379/0
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
     volumes:
-      - .:/app
-      - /app/node_modules
+      - ./touriquest-backend/services/api-gateway:/app
+      - ./shared:/app/shared
     depends_on:
-      - postgres
-      - redis
-      - elasticsearch
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - touriquest-network
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+  # Authentication Service
   auth-service:
     build:
-      context: .
-      dockerfile: ./docker/auth-service/Dockerfile.dev
+      context: ./touriquest-backend/services/auth-service
+      dockerfile: Dockerfile.dev
     container_name: touriquest-auth-service-dev
     ports:
       - "8001:8001"
@@ -204,52 +219,554 @@ services:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
       - REDIS_URL=redis://redis:6379/1
-      - JWT_SECRET_KEY=dev-jwt-secret-key
+      - JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=30
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
     volumes:
-      - .:/app
+      - ./touriquest-backend/services/auth-service:/app
+      - ./shared:/app/shared
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  user-service:
+  
+  # Property Management Service
+  property-service:
     build:
-      context: .
-      dockerfile: ./docker/user-service/Dockerfile.dev
-    container_name: touriquest-user-service-dev
+      context: ./touriquest-backend/services/property-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-property-service-dev
     ports:
-      - "8002:8002"
+      - "8003:8003"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
-      - REDIS_URL=redis://redis:6379/2
+      - REDIS_URL=redis://redis:6379/3
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
     volumes:
-      - .:/app
+      - ./touriquest-backend/services/property-service:/app
+      - ./shared:/app/shared
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Points of Interest Service
+  poi-service:
+    build:
+      context: ./touriquest-backend/services/poi-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-poi-service-dev
+    ports:
+      - "8004:8004"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/4
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/poi-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Booking Management Service
+  booking-service:
+    build:
+      context: ./touriquest-backend/services/booking-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-booking-service-dev
+    ports:
+      - "8005:8005"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/5
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+      - STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
+      - STRIPE_WEBHOOK_SECRET=whsec_test_webhook_secret
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/booking-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Experience Management Service
+  experience-service:
+    build:
+      context: ./touriquest-backend/services/experience-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-experience-service-dev
+    ports:
+      - "8006:8006"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/6
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/experience-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI & Recommendation Service
+  ai-service:
+    build:
+      context: ./touriquest-backend/services/ai-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-ai-service-dev
+    ports:
+      - "8007:8007"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/7
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - OPENAI_API_KEY=your_openai_api_key_here
+      - ANTHROPIC_API_KEY=your_anthropic_api_key_here
+      - HUGGINGFACE_API_KEY=your_huggingface_api_key_here
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/ai-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Media Management Service
+  media-service:
+    build:
+      context: ./touriquest-backend/services/media-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-media-service-dev
+    ports:
+      - "8008:8008"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/8
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+      - CLOUDINARY_API_KEY=your_cloudinary_api_key
+      - CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/media-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./touriquest-backend/services/notification-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-notification-service-dev
+    ports:
+      - "8009:8009"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/9
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+      - SMTP_USER=test@touriquest.com
+      - SMTP_PASSWORD=test_password
+      - TWILIO_ACCOUNT_SID=your_twilio_account_sid
+      - TWILIO_AUTH_TOKEN=your_twilio_auth_token
+      - FIREBASE_CREDENTIALS=your_firebase_credentials_json
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/notification-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Analytics Service
+  analytics-service:
+    build:
+      context: ./touriquest-backend/services/analytics-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-analytics-service-dev
+    ports:
+      - "8010:8010"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/10
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/analytics-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Admin Service
+  admin-service:
+    build:
+      context: ./touriquest-backend/services/admin-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-admin-service-dev
+    ports:
+      - "8011:8011"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/11
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/admin-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Communication Service
+  communication-service:
+    build:
+      context: ./touriquest-backend/services/communication-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-communication-service-dev
+    ports:
+      - "8012:8012"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/12
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/communication-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8012/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Integration Service
+  integrations-service:
+    build:
+      context: ./touriquest-backend/services/integrations-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-integrations-service-dev
+    ports:
+      - "8013:8013"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/13
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+      - WEATHER_API_KEY=your_weather_api_key
+      - AMADEUS_API_KEY=your_amadeus_api_key
+      - AMADEUS_API_SECRET=your_amadeus_api_secret
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/integrations-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8013/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring Service
+  monitoring-service:
+    build:
+      context: ./touriquest-backend/services/monitoring-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-monitoring-service-dev
+    ports:
+      - "8014:8014"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/14
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - PROMETHEUS_URL=http://prometheus:9090
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/monitoring-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8014/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Recommendation Service
+  recommendation-service:
+    build:
+      context: ./touriquest-backend/services/recommendation-service
+      dockerfile: Dockerfile.dev
+    container_name: touriquest-recommendation-service-dev
+    ports:
+      - "8015:8015"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/touriquest_dev
+      - REDIS_URL=redis://redis:6379/15
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+    volumes:
+      - ./touriquest-backend/services/recommendation-service:/app
+      - ./shared:/app/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8015/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # =============================================================================
   # FRONTEND (for full-stack development)
   # =============================================================================
   frontend:
     build:
-      context: .
-      dockerfile: ./docker/frontend/Dockerfile.dev
+      context: ./frontend
+      dockerfile: Dockerfile.dev
     container_name: touriquest-frontend-dev
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=development
       - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_WS_URL=ws://localhost:8000
+      - REACT_APP_SENTRY_DSN=your_frontend_sentry_dsn
+      - CHOKIDAR_USEPOLLING=true
+      - GENERATE_SOURCEMAP=true
     volumes:
-      - .:/app
+      - ./frontend:/app
       - /app/node_modules
     networks:
       - touriquest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 # =============================================================================
 # NETWORKS & VOLUMES
@@ -257,6 +774,9 @@ services:
 networks:
   touriquest-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   postgres_data:

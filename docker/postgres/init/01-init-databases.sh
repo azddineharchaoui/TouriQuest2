@@ -4,16 +4,20 @@ set -e
 # Create databases for different environments
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- Create development database
-    CREATE DATABASE touriquest_dev;
+    SELECT 'CREATE DATABASE touriquest_dev'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'touriquest_dev')\gexec
     
     -- Create test database
-    CREATE DATABASE touriquest_test;
+    SELECT 'CREATE DATABASE touriquest_test'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'touriquest_test')\gexec
     
     -- Create staging database
-    CREATE DATABASE touriquest_staging;
+    SELECT 'CREATE DATABASE touriquest_staging'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'touriquest_staging')\gexec
     
     -- Create production database
-    CREATE DATABASE touriquest_prod;
+    SELECT 'CREATE DATABASE touriquest_prod'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'touriquest_prod')\gexec
     
     -- Grant privileges
     GRANT ALL PRIVILEGES ON DATABASE touriquest_dev TO postgres;

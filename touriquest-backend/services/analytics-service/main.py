@@ -1,89 +1,466 @@
-"""
-TouriQuest Analytics Service
-FastAPI microservice for user behavior tracking, metrics, and reporting
-"""
-from typing import List, Optional, Dict, Any
-from datetime import datetime, date, timedelta
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+"""""""""
+
+Analytics Service Main Application
+
+"""Analytics Service Main ApplicationAnalytics Service Main Application
+
+
+
+from fastapi import FastAPI, Request""""""
+
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from shared.database import get_db_session, BaseRepository
-from shared.monitoring import MonitoringSetup
-from shared.security import SecurityHeaders, RateLimiter, get_current_user
-import logging
-import uuid
-from enum import Enum
+
+from fastapi.responses import JSONResponse
+
+from contextlib import asynccontextmanager
+
+import loggingfrom fastapi import FastAPI, Requestfrom fastapi import FastAPI, Request
+
+from datetime import datetime
+
+from fastapi.middleware.cors import CORSMiddlewarefrom fastapi.middleware.cors import CORSMiddleware
+
+from app.core.config import settings
+
+from app.core.database import init_db, close_dbfrom fastapi.responses import JSONResponsefrom fastapi.responses import JSONResponse
+
+
+
+# Import routersfrom contextlib import asynccontextmanagerfrom contextlib import asynccontextmanager
+
+from app.api.endpoints import dashboard, revenue, users, properties, trends
+
+import loggingimport logging
+
+
+
+# Configure loggingfrom datetime import datetimefrom datetime import datetime
+
+logging.basicConfig(
+
+    level=logging.INFO,
+
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+)from app.core.config import settingsfrom app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
+from app.core.database import init_db, close_dbfrom app.core.database import init_db, close_db
+
+
+
+@asynccontextmanager
+
+async def lifespan(app: FastAPI):
+
+    """Application lifespan manager"""# Import routers# Import routers
+
+    logger.info("Starting Analytics Service...")
+
+    from app.api.endpoints import dashboard, revenue, users, properties, trendsfrom app.api.endpoints import dashboard, revenue, users, properties, trends
+
+    # Initialize database connections
+
+    await init_db()
+
+    logger.info("Database connections initialized")
+
+    
+
+    yield
+
+    # Configure logging# Configure logging
+
+    # Cleanup
+
+    logger.info("Shutting down Analytics Service...")logging.basicConfig(logging.basicConfig(
+
+    await close_db()
+
+    logger.info("Database connections closed")    level=logging.INFO,    level=logging.INFO,
+
+
+
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Create FastAPI application
+
+app = FastAPI())
+
     title="TouriQuest Analytics Service",
-    description="User behavior tracking, metrics, and reporting microservice",
+
+    description="Comprehensive analytics and business intelligence service for TouriQuest platform",logger = logging.getLogger(__name__)logger = logging.getLogger(__name__)
+
     version="1.0.0",
+
     docs_url="/docs",
+
     redoc_url="/redoc",
-)
 
-# Monitoring setup
-monitoring = MonitoringSetup("analytics-service")
-app = monitoring.instrument_fastapi(app)
+    openapi_url="/openapi.json",
 
-# CORS configuration
+    lifespan=lifespan
+
+)@asynccontextmanager@asynccontextmanager
+
+
+
+# Add CORS middlewareasync def lifespan(app: FastAPI):async def lifespan(app: FastAPI):
+
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+
+    CORSMiddleware,    """Application lifespan manager"""    """Application lifespan manager"""
+
+    allow_origins=settings.ALLOWED_ORIGINS,
+
+    allow_credentials=True,    logger.info("Starting Analytics Service...")    logger.info("Starting Analytics Service...")
+
     allow_methods=["*"],
-    allow_headers=["*"],
+
+    allow_headers=["*"],        
+
 )
 
-rate_limiter = RateLimiter()
+    # Initialize database connections    # Initialize database connections
 
 
-# Enums
-class EventTypeEnum(str, Enum):
-    PAGE_VIEW = "page_view"
-    SEARCH = "search"
-    PROPERTY_VIEW = "property_view"
-    BOOKING_START = "booking_start"
-    BOOKING_COMPLETE = "booking_complete"
-    USER_REGISTER = "user_register"
+
+# Global exception handler    await init_db()    await init_db()
+
+@app.exception_handler(Exception)
+
+async def global_exception_handler(request: Request, exc: Exception):    logger.info("Database connections initialized")    logger.info("Database connections initialized")
+
+    """Global exception handler for unhandled errors"""
+
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)        
+
+    return JSONResponse(
+
+        status_code=500,    yield    yield
+
+        content={
+
+            "success": False,        
+
+            "error": "Internal server error",
+
+            "message": str(exc) if settings.DEBUG else "An unexpected error occurred",    # Cleanup    # Cleanup
+
+            "timestamp": datetime.utcnow().isoformat()
+
+        }    logger.info("Shutting down Analytics Service...")    logger.info("Shutting down Analytics Service...")
+
+    )
+
+    await close_db()    await close_db()
+
+
+
+# Health check endpoint    logger.info("Database connections closed")    logger.info("Database connections closed")
+
+@app.get("/health")
+
+async def health_check():
+
+    """Health check endpoint"""
+
+    return {
+
+        "status": "healthy",
+
+        "service": "TouriQuest Analytics Service",# Create FastAPI application# Create FastAPI application
+
+        "version": "1.0.0",
+
+        "timestamp": datetime.utcnow().isoformat()app = FastAPI(app = FastAPI(
+
+    }
+
+    title="TouriQuest Analytics Service",    title="TouriQuest Analytics Service",
+
+
+
+# Root endpoint    description="Comprehensive analytics and business intelligence service for TouriQuest platform",    description="Comprehensive analytics and business intelligence service for TouriQuest platform",
+
+@app.get("/")
+
+async def root():    version="1.0.0",    version="1.0.0",
+
+    """Root endpoint with service information"""
+
+    return {    docs_url="/docs",    docs_url="/docs",
+
+        "service": "TouriQuest Analytics Service",
+
+        "version": "1.0.0",    redoc_url="/redoc",    redoc_url="/redoc",
+
+        "description": "Comprehensive analytics and business intelligence service",
+
+        "docs_url": "/docs",    openapi_url="/openapi.json",    openapi_url="/openapi.json",
+
+        "health_url": "/health",
+
+        "endpoints": {    lifespan=lifespan    lifespan=lifespan
+
+            "dashboard": "/analytics/dashboard",
+
+            "revenue": "/analytics/revenue",))
+
+            "users": "/analytics/users",
+
+            "properties": "/analytics/properties",
+
+            "trends": "/analytics/trends"
+
+        },# Add CORS middleware# Add CORS middleware
+
+        "timestamp": datetime.utcnow().isoformat()
+
+    }app.add_middleware(app.add_middleware(
+
+
+
+    CORSMiddleware,    CORSMiddleware,
+
+# Include API routers
+
+app.include_router(dashboard.router)    allow_origins=settings.ALLOWED_ORIGINS,    allow_origins=settings.ALLOWED_ORIGINS,
+
+app.include_router(revenue.router)
+
+app.include_router(users.router)    allow_credentials=True,    allow_credentials=True,
+
+app.include_router(properties.router)
+
+app.include_router(trends.router)    allow_methods=["*"],    allow_methods=["*"],
+
+
+
+    allow_headers=["*"],    allow_headers=["*"],
+
+# Additional middleware for request logging
+
+@app.middleware("http")))
+
+async def log_requests(request: Request, call_next):
+
+    """Log all incoming requests"""
+
+    start_time = datetime.utcnow()
+
+    
+
+    # Log request
+
+    logger.info(f"Request: {request.method} {request.url}")# Global exception handler# Global exception handler
+
+    
+
+    # Process request@app.exception_handler(Exception)@app.exception_handler(Exception)
+
+    response = await call_next(request)
+
+    async def global_exception_handler(request: Request, exc: Exception):async def global_exception_handler(request: Request, exc: Exception):
+
+    # Calculate processing time
+
+    process_time = (datetime.utcnow() - start_time).total_seconds()    """Global exception handler for unhandled errors"""    """Global exception handler for unhandled errors"""
+
+    
+
+    # Log response    logger.error(f"Unhandled exception: {exc}", exc_info=True)    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+
+    logger.info(f"Response: {response.status_code} | Processing time: {process_time:.3f}s")
+
+        return JSONResponse(    return JSONResponse(
+
+    # Add processing time to response headers
+
+    response.headers["X-Process-Time"] = str(process_time)        status_code=500,        status_code=500,
+
+    
+
+    return response        content={        content={
+
+
+
+            "success": False,            "success": False,
+
+if __name__ == "__main__":
+
+    import uvicorn            "error": "Internal server error",            "error": "Internal server error",
+
+    
+
+    uvicorn.run(            "message": str(exc) if settings.DEBUG else "An unexpected error occurred",            "message": str(exc) if settings.DEBUG else "An unexpected error occurred",
+
+        "main:app",
+
+        host="0.0.0.0",            "timestamp": datetime.utcnow().isoformat()            "timestamp": datetime.utcnow().isoformat()
+
+        port=8000,
+
+        reload=settings.DEBUG,        }        }
+
+        log_level="info"
+
+    )    )    )
+
+
+
+
+
+# Health check endpoint# Health check endpoint
+
+@app.get("/health")@app.get("/health")
+
+async def health_check():async def health_check():
+
+    """Health check endpoint"""    """Health check endpoint"""
+
+    return {    return {
+
+        "status": "healthy",        "status": "healthy",
+
+        "service": "TouriQuest Analytics Service",        "service": "TouriQuest Analytics Service",
+
+        "version": "1.0.0",        "version": "1.0.0",
+
+        "timestamp": datetime.utcnow().isoformat()        "timestamp": datetime.utcnow().isoformat()
+
+    }    }
+
+
+
+
+
+# Root endpoint# Root endpoint
+
+@app.get("/")@app.get("/")
+
+async def root():async def root():
+
+    """Root endpoint with service information"""    """Root endpoint with service information"""
+
+    return {    return {
+
+        "service": "TouriQuest Analytics Service",        "service": "TouriQuest Analytics Service",
+
+        "version": "1.0.0",        "version": "1.0.0",
+
+        "description": "Comprehensive analytics and business intelligence service",        "description": "Comprehensive analytics and business intelligence service",
+
+        "docs_url": "/docs",        "docs_url": "/docs",
+
+        "health_url": "/health",        "health_url": "/health",
+
+        "endpoints": {        "endpoints": {
+
+            "dashboard": "/analytics/dashboard",            "dashboard": "/analytics/dashboard",
+
+            "revenue": "/analytics/revenue",            "revenue": "/analytics/revenue",
+
+            "users": "/analytics/users",            "users": "/analytics/users",
+
+            "properties": "/analytics/properties",            "properties": "/analytics/properties",
+
+            "trends": "/analytics/trends"            "trends": "/analytics/trends"
+
+        },        },
+
+        "timestamp": datetime.utcnow().isoformat()        "timestamp": datetime.utcnow().isoformat()
+
+    }    }
+
+
+
+
+
+# Include API routers# Include API routers
+
+app.include_router(dashboard.router)app.include_router(dashboard.router)
+
+app.include_router(revenue.router)app.include_router(revenue.router)
+
+app.include_router(users.router)app.include_router(users.router)
+
+app.include_router(properties.router)app.include_router(properties.router)
+
+app.include_router(trends.router)app.include_router(trends.router)
+
     USER_LOGIN = "user_login"
+
     CHAT_MESSAGE = "chat_message"
-    RECOMMENDATION_VIEW = "recommendation_view"
-    SHARE = "share"
-    REVIEW_SUBMIT = "review_submit"
+
+# Additional middleware for request logging    RECOMMENDATION_VIEW = "recommendation_view"
+
+@app.middleware("http")    SHARE = "share"
+
+async def log_requests(request: Request, call_next):    REVIEW_SUBMIT = "review_submit"
+
+    """Log all incoming requests"""
+
+    start_time = datetime.utcnow()
+
+    class ReportTypeEnum(str, Enum):
+
+    # Log request    USER_ENGAGEMENT = "user_engagement"
+
+    logger.info(f"Request: {request.method} {request.url}")    BOOKING_ANALYTICS = "booking_analytics"
+
+        REVENUE_ANALYTICS = "revenue_analytics"
+
+    # Process request    CONTENT_PERFORMANCE = "content_performance"
+
+    response = await call_next(request)    FUNNEL_ANALYSIS = "funnel_analysis"
+
+        GEOGRAPHIC_ANALYTICS = "geographic_analytics"
+
+    # Calculate processing time
+
+    process_time = (datetime.utcnow() - start_time).total_seconds()
+
+    # Pydantic models
+
+    # Log responseclass AnalyticsEvent(BaseModel):
+
+    logger.info(f"Response: {response.status_code} | Processing time: {process_time:.3f}s")    event_type: EventTypeEnum
+
+        user_id: Optional[str] = None
+
+    # Add processing time to response headers    session_id: str
+
+    response.headers["X-Process-Time"] = str(process_time)    properties: Dict[str, Any] = {}
+
+        metadata: Dict[str, Any] = {}
+
+    return response    timestamp: Optional[datetime] = None
 
 
-class ReportTypeEnum(str, Enum):
-    USER_ENGAGEMENT = "user_engagement"
-    BOOKING_ANALYTICS = "booking_analytics"
-    REVENUE_ANALYTICS = "revenue_analytics"
-    CONTENT_PERFORMANCE = "content_performance"
-    FUNNEL_ANALYSIS = "funnel_analysis"
-    GEOGRAPHIC_ANALYTICS = "geographic_analytics"
 
 
-# Pydantic models
-class AnalyticsEvent(BaseModel):
-    event_type: EventTypeEnum
-    user_id: Optional[str] = None
-    session_id: str
-    properties: Dict[str, Any] = {}
-    metadata: Dict[str, Any] = {}
-    timestamp: Optional[datetime] = None
 
+if __name__ == "__main__":class EventResponse(BaseModel):
 
-class EventResponse(BaseModel):
-    event_id: str
-    status: str
-    message: str
+    import uvicorn    event_id: str
 
+        status: str
 
-class MetricsQuery(BaseModel):
-    start_date: date
-    end_date: date
-    metrics: List[str]
+    uvicorn.run(    message: str
+
+        "main:app",
+
+        host="0.0.0.0",
+
+        port=8000,class MetricsQuery(BaseModel):
+
+        reload=settings.DEBUG,    start_date: date
+
+        log_level="info"    end_date: date
+
+    )    metrics: List[str]
     filters: Optional[Dict[str, Any]] = {}
     group_by: Optional[List[str]] = []
 
