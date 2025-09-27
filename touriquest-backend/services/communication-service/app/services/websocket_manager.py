@@ -1,53 +1,41 @@
 """
-WebSocket connection manager for real-time communication
+WebSocket manager for real-time communication features
+Handles WebSocket connections, message broadcasting, and real-time updates
 """
 
-from typing import Dict, List, Set, Optional, Any, Callable
 import asyncio
 import json
 import logging
-import time
+from typing import Dict, List, Set, Optional, Any
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
-from fastapi import WebSocket, WebSocketDisconnect
-from websockets.exceptions import ConnectionClosed
-import redis.asyncio as redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import uuid4
 
-from app.core.config import settings
-from app.core.database import AsyncSessionLocal
-from app.models.chat_models import UserConnection, UserStatus, TypingIndicator
-import uuid
+from fastapi import WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class WebSocketMessage:
+class WebSocketMessage(BaseModel):
     """WebSocket message structure"""
     type: str
     data: Dict[str, Any]
     timestamp: datetime
-    user_id: Optional[str] = None
-    conversation_id: Optional[str] = None
-    message_id: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "type": self.type,
-            "data": self.data,
-            "timestamp": self.timestamp.isoformat(),
-            "user_id": self.user_id,
-            "conversation_id": self.conversation_id,
-            "message_id": self.message_id
-        }
+    message_id: str
 
 
-@dataclass
-class ConnectionInfo:
-    """Connection information"""
-    websocket: WebSocket
+class ConnectionInfo(BaseModel):
+    """WebSocket connection information"""
     user_id: str
+    connection_id: str
+    websocket: WebSocket
+    connected_at: datetime
+    last_activity: datetime
+    rooms: Set[str] = set()
+
+    class Config:
+        arbitrary_types_allowed = True
     connection_id: str
     device_id: Optional[str]
     device_type: Optional[str]

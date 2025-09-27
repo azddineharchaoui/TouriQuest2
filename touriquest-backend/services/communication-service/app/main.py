@@ -237,7 +237,18 @@ async def get_metrics():
 
 
 # Include API routers
+from app.api.messages import router as messages_router
+from app.api.conversations import router as conversations_router
+from app.api.support_tickets import router as support_router
+from app.api.notifications import router as notifications_router
+from app.api.websocket import router as websocket_router
+
 app.include_router(chat_router, prefix="/api")
+app.include_router(messages_router, prefix="/api/v1/communication")
+app.include_router(conversations_router, prefix="/api/v1/communication")
+app.include_router(support_router, prefix="/api/v1/communication")
+app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(websocket_router, prefix="/api/v1")
 
 # Static files for uploaded content
 if settings.CHAT_FILE_UPLOAD_PATH:

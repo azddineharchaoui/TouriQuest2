@@ -458,6 +458,306 @@ async def get_notification_templates():
     return {"templates": list(template_service.templates.keys())}
 
 
+# Notification Settings Models
+class NotificationSettingsResponse(BaseModel):
+    """Response model for notification settings"""
+    user_id: str
+    email_enabled: bool = True
+    push_enabled: bool = True
+    sms_enabled: bool = False
+    in_app_enabled: bool = True
+    booking_notifications: bool = True
+    promotion_notifications: bool = False
+    security_notifications: bool = True
+    system_notifications: bool = True
+    recommendation_notifications: bool = True
+    quiet_hours_enabled: bool = False
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+    timezone: str = "UTC"
+    digest_enabled: bool = False
+    digest_frequency: str = "weekly"
+    digest_time: str = "09:00"
+    smart_filtering: bool = True
+    location_based: bool = True
+    behavior_based: bool = True
+    updated_at: datetime = datetime.utcnow()
+
+
+class NotificationSettingsUpdateRequest(BaseModel):
+    """Request model for updating notification settings"""
+    email_enabled: Optional[bool] = None
+    push_enabled: Optional[bool] = None
+    sms_enabled: Optional[bool] = None
+    in_app_enabled: Optional[bool] = None
+    booking_notifications: Optional[bool] = None
+    promotion_notifications: Optional[bool] = None
+    security_notifications: Optional[bool] = None
+    system_notifications: Optional[bool] = None
+    recommendation_notifications: Optional[bool] = None
+    quiet_hours_enabled: Optional[bool] = None
+    quiet_hours_start: Optional[str] = None
+    quiet_hours_end: Optional[str] = None
+    timezone: Optional[str] = None
+    digest_enabled: Optional[bool] = None
+    digest_frequency: Optional[str] = None
+    digest_time: Optional[str] = None
+    smart_filtering: Optional[bool] = None
+    location_based: Optional[bool] = None
+    behavior_based: Optional[bool] = None
+
+
+# Notification Settings Repository
+class NotificationSettingsRepository(BaseRepository):
+    """Repository for notification settings"""
+    
+    async def get_user_settings(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user notification settings"""
+        # Mock implementation - replace with actual database query
+        return {
+            "user_id": user_id,
+            "email_enabled": True,
+            "push_enabled": True,
+            "sms_enabled": False,
+            "in_app_enabled": True,
+            "booking_notifications": True,
+            "promotion_notifications": False,
+            "security_notifications": True,
+            "system_notifications": True,
+            "recommendation_notifications": True,
+            "quiet_hours_enabled": False,
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
+            "timezone": "UTC",
+            "digest_enabled": False,
+            "digest_frequency": "weekly",
+            "digest_time": "09:00",
+            "smart_filtering": True,
+            "location_based": True,
+            "behavior_based": True,
+            "updated_at": datetime.utcnow()
+        }
+    
+    async def update_user_settings(self, user_id: str, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Update user notification settings"""
+        # Mock implementation - replace with actual database update
+        updated_settings = await self.get_user_settings(user_id)
+        updated_settings.update(settings)
+        updated_settings["updated_at"] = datetime.utcnow()
+        return updated_settings
+
+
+# Dependency for settings repository
+async def get_notification_settings_repository() -> NotificationSettingsRepository:
+    """Get notification settings repository dependency."""
+    return NotificationSettingsRepository()
+
+
+@app.get("/api/v1/notifications/settings", response_model=NotificationSettingsResponse)
+async def get_notification_settings(
+    current_user: dict = Depends(get_current_user),
+    settings_repo: NotificationSettingsRepository = Depends(get_notification_settings_repository)
+):
+    """Get user notification settings"""
+    try:
+        settings = await settings_repo.get_user_settings(current_user["id"])
+        return NotificationSettingsResponse(**settings)
+    except Exception as e:
+        logger.error(f"Error getting notification settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve notification settings"
+        )
+
+
+@app.put("/api/v1/notifications/settings", response_model=NotificationSettingsResponse)
+async def update_notification_settings(
+    settings_data: NotificationSettingsUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    settings_repo: NotificationSettingsRepository = Depends(get_notification_settings_repository)
+):
+    """Update user notification settings"""
+    try:
+        # Validate timezone if provided
+        if settings_data.timezone:
+            # Add timezone validation logic here
+            pass
+        
+        # Update settings
+        update_dict = settings_data.dict(exclude_unset=True)
+        updated_settings = await settings_repo.update_user_settings(
+            current_user["id"], update_dict
+        )
+        
+        return NotificationSettingsResponse(**updated_settings)
+        
+    except Exception as e:
+        logger.error(f"Error updating notification settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update notification settings"
+        )
+
+
+# Push Notification Subscription Models
+class PushSubscriptionRequest(BaseModel):
+    """Request model for push notification subscription"""
+    endpoint: str
+    keys: Dict[str, str]
+    device_type: str
+    device_name: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+@app.post("/api/v1/notifications/push/subscribe")
+async def subscribe_to_push_notifications(
+    subscription_data: PushSubscriptionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Subscribe to push notifications"""
+    try:
+        # Validate and store push subscription
+        subscription_id = str(uuid.uuid4())
+        
+        # Mock implementation - replace with actual storage
+        subscription = {
+            "id": subscription_id,
+            "user_id": current_user["id"],
+            "endpoint": subscription_data.endpoint,
+            "keys": subscription_data.keys,
+            "device_type": subscription_data.device_type,
+            "device_name": subscription_data.device_name,
+            "user_agent": subscription_data.user_agent,
+            "created_at": datetime.utcnow(),
+            "active": True
+        }
+        
+        # Send welcome push notification
+        await push_service.send_push(
+            subscription_data.endpoint,
+            "Welcome to TouriQuest!",
+            "You're now subscribed to push notifications.",
+            subscription_data.keys
+        )
+        
+        return {
+            "message": "Successfully subscribed to push notifications",
+            "subscription_id": subscription_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error subscribing to push notifications: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to subscribe to push notifications"
+        )
+
+
+@app.delete("/api/v1/notifications/push/unsubscribe")
+async def unsubscribe_from_push_notifications(
+    device_endpoint: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Unsubscribe from push notifications"""
+    try:
+        # Mock implementation - replace with actual deletion
+        # Remove subscription from database
+        
+        return {"message": "Successfully unsubscribed from push notifications"}
+        
+    except Exception as e:
+        logger.error(f"Error unsubscribing from push notifications: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unsubscribe from push notifications"
+        )
+
+
+@app.get("/api/v1/notifications/unread-count")
+async def get_unread_notification_count(
+    current_user: dict = Depends(get_current_user),
+    notification_repo: NotificationRepository = Depends(get_notification_repository)
+):
+    """Get unread notification count"""
+    try:
+        # Mock implementation - replace with actual query
+        unread_count = await notification_repo.get_unread_count(current_user["id"])
+        
+        return {
+            "total_unread": unread_count,
+            "by_category": {
+                "booking": 3,
+                "system": 1,
+                "recommendation": 2
+            },
+            "by_priority": {
+                "high": 1,
+                "normal": 4,
+                "low": 1
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting unread count: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get unread notification count"
+        )
+
+
+@app.put("/api/v1/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    current_user: dict = Depends(get_current_user),
+    notification_repo: NotificationRepository = Depends(get_notification_repository)
+):
+    """Mark notification as read"""
+    try:
+        # Mock implementation - replace with actual update
+        success = await notification_repo.mark_as_read(notification_id, current_user["id"])
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found"
+            )
+        
+        return {"message": "Notification marked as read"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking notification as read: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to mark notification as read"
+        )
+
+
+@app.put("/api/v1/notifications/read-all")
+async def mark_all_notifications_read(
+    category: Optional[NotificationCategoryEnum] = None,
+    current_user: dict = Depends(get_current_user),
+    notification_repo: NotificationRepository = Depends(get_notification_repository)
+):
+    """Mark all notifications as read"""
+    try:
+        # Mock implementation - replace with actual bulk update
+        marked_count = await notification_repo.mark_all_as_read(current_user["id"], category)
+        
+        return {
+            "message": "Notifications marked as read",
+            "marked_count": marked_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error marking all notifications as read: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to mark all notifications as read"
+        )
+
+
 @app.post("/api/v1/notifications/test")
 async def test_notification(
     notification_type: NotificationTypeEnum,

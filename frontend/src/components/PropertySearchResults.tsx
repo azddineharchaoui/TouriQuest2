@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { propertyService, PropertySearchRequest } from '../services/propertyService';
+import { Property, PropertySearchFilters, SavedSearch } from '../types/api-types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -7,6 +10,15 @@ import { Badge } from './ui/badge';
 import { Checkbox } from './ui/checkbox';
 import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Switch } from './ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { ScrollArea } from './ui/scroll-area';
+import { Separator } from './ui/separator';
+import { Progress } from './ui/progress';
+import { Alert, AlertDescription } from './ui/alert';
+import { toast } from './ui/use-toast';
 import { 
   Search, 
   MapPin, 
@@ -40,978 +52,989 @@ import {
   Wind,
   Mountain,
   Accessibility,
-  PetIcon,
+  Dog,
   Cigarette,
   CigaretteOff,
   Volume2,
   VolumeX,
-  Sparkles
+  Sparkles,
+  BookmarkPlus,
+  TrendingUp,
+  TrendingDown,
+  Percent,
+  CalendarCheck,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  Timer,
+  DollarSign,
+  Zap,
+  Award,
+  MapPinIcon,
+  Navigation2
 } from 'lucide-react';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 
-interface Property {
-  id: string;
-  title: string;
-  type: string;
-  location: string;
-  distance: string;
-  price: number;
-  rating: number;
-  reviews: number;
-  images: string[];
-  amenities: string[];
-  isEcoFriendly: boolean;
-  instantBook: boolean;
-  host: {
-    name: string;
-    verified: boolean;
-    avatar: string;
-    isSuperhost?: boolean;
-  };
-  description: string;
-  bedrooms?: number;
-  bathrooms?: number;
-  maxGuests?: number;
+// Enhanced interfaces for backend integration
+interface ExtendedPropertySearchFilters extends PropertySearchFilters {
+  priceMin?: number;
+  priceMax?: number;
+  propertyType?: string[];
+  amenities?: string[];
+  rating?: number;
+  distance?: number;
+  instantBook?: boolean;
+  superhost?: boolean;
+  isEcoFriendly?: boolean;
   accessibility?: boolean;
-  smoking?: boolean;
   petFriendly?: boolean;
+  smoking?: boolean;
+  page?: number;
+  limit?: number;
+  sortBy?: 'price' | 'rating' | 'distance' | 'popularity';
+  sortOrder?: 'asc' | 'desc';
 }
 
-const mockProperties: Property[] = [
-  {
-    id: '1',
-    title: 'Luxury Oceanview Villa with Private Pool',
-    type: 'Villa',
-    location: 'Seminyak, Bali',
-    distance: '2.1 km from center',
-    price: 450,
-    rating: 4.9,
-    reviews: 127,
-    bedrooms: 4,
-    bathrooms: 3,
-    maxGuests: 8,
-    images: [
-      'https://images.unsplash.com/photo-1640608788324-33d0b6496b4f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHhiZWFjaGZyb250JTIwdmlsbGElMjBvY2VhbiUyMHZpZXd8ZW58MXx8fHwxNzU4MzEwODg0fDA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1632598024410-3d8f24daab57?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBob3RlbCUyMHJvb20lMjBpbnRlcmlvcnxlbnwxfHx8fDE3NTgyNTUyODZ8MA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1662454419622-a41092ecd245?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhcGFydG1lbnQlMjBsaXZpbmclMjByb29tfGVufDF8fHx8MTc1ODI3NzA4N3ww&ixlib=rb-4.1.0&q=80&w=1080'
-    ],
-    amenities: ['wifi', 'pool', 'parking', 'kitchen', 'gym', 'spa', 'balcony', 'aircon'],
-    isEcoFriendly: true,
-    instantBook: true,
-    accessibility: false,
-    smoking: false,
-    petFriendly: true,
-    host: {
-      name: 'Maria Santos',
-      verified: true,
-      isSuperhost: true,
-      avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=100&h=100&fit=crop&crop=face'
-    },
-    description: 'Stunning oceanview villa with private pool and direct beach access. Perfect for romantic getaways or family vacations.'
-  },
-  {
-    id: '2',
-    title: 'Modern Downtown Apartment',
-    type: 'Apartment',
-    location: 'Shibuya, Tokyo',
-    distance: '0.8 km from center',
-    price: 180,
-    rating: 4.7,
-    reviews: 89,
-    bedrooms: 2,
-    bathrooms: 1,
-    maxGuests: 4,
-    images: [
-      'https://images.unsplash.com/photo-1662454419622-a41092ecd245?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhcGFydG1lbnQlMjBsaXZpbmclMjByb29tfGVufDF8fHx8MTc1ODI3NzA4N3ww&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1698910746353-65dadc2c2dcd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx0cmF2ZWwlMjBkZXN0aW5hdGlvbiUyMGNpdHlzY2FwZXxlbnwxfHx8fDE3NTgzMTA4ODl8MA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1682221568203-16f33b35e57d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHhib3V0aXF1ZSUyMGhvdGVsJTIwbG9iYnl8ZW58MXx8fHwxNzU4Mjc3NTM5fDA&ixlib=rb-4.1.0&q=80&w=1080'
-    ],
-    amenities: ['wifi', 'kitchen', 'gym', 'tv', 'aircon'],
-    isEcoFriendly: false,
-    instantBook: false,
-    accessibility: true,
-    smoking: false,
-    petFriendly: false,
-    host: {
-      name: 'Takeshi Yamamoto',
-      verified: true,
-      isSuperhost: false,
-      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face'
-    },
-    description: 'Sleek modern apartment in the heart of Tokyo. Walking distance to subway stations and major attractions.'
-  },
-  {
-    id: '3',
-    title: 'Boutique Hotel Suite with Caldera View',
-    type: 'Hotel',
-    location: 'Oia, Santorini',
-    distance: '1.5 km from center',
-    price: 320,
-    rating: 4.8,
-    reviews: 156,
-    bedrooms: 1,
-    bathrooms: 1,
-    maxGuests: 2,
-    images: [
-      'https://images.unsplash.com/photo-1632598024410-3d8f24daab57?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBob3RlbCUyMHJvb20lMjBpbnRlcmlvcnxlbnwxfHx8fDE3NTgyNTUyODZ8MA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1682221568203-16f33b35e57d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHhib3V0aXF1ZSUyMGhvdGVsJTIwbG9iYnl8ZW58MXx8fHwxNzU4Mjc3NTM5fDA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1640608788324-33d0b6496b4f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHhiZWFjaGZyb250JTIwdmlsbGElMjBvY2VhbiUyMHZpZXd8ZW58MXx8fHwxNzU4MzEwODg0fDA&ixlib=rb-4.1.0&q=80&w=1080'
-    ],
-    amenities: ['wifi', 'pool', 'spa', 'restaurant', 'balcony', 'tv', 'minibar'],
-    isEcoFriendly: true,
-    instantBook: true,
-    accessibility: false,
-    smoking: false,
-    petFriendly: false,
-    host: {
-      name: 'Elena Papadopoulos',
-      verified: true,
-      isSuperhost: true,
-      avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop&crop=face'
-    },
-    description: 'Elegant boutique hotel suite with caldera views. Experience authentic Greek hospitality in luxury.'
-  },
-  {
-    id: '4',
-    title: 'Mountain Resort Chalet',
-    type: 'Chalet',
-    location: 'Zermatt, Swiss Alps',
-    distance: '3.2 km from center',
-    price: 275,
-    rating: 4.9,
-    reviews: 203,
-    bedrooms: 3,
-    bathrooms: 2,
-    maxGuests: 6,
-    images: [
-      'https://images.unsplash.com/photo-1667293272142-21d22f60acf5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb3VudGFpbiUyMHJlc29ydCUyMGFjY29tbW9kYXRpb258ZW58MXx8fHwxNzU4MzEwODkzfDA&ixlib=rb-4.1.0&q=80&w=1080',
-      'https://images.unsplash.com/photo-1632598024410-3d8f24daab57?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBob3RlbCUyMHJvb20lMjBpbnRlcmlvcnxlbnwxfHx8fDE3NTgyNTUyODZ8MA&ixlib=rb-4.1.0&q=80&w=1080'
-    ],
-    amenities: ['wifi', 'parking', 'kitchen', 'spa', 'mountain-view', 'fireplace'],
-    isEcoFriendly: true,
-    instantBook: false,
-    accessibility: true,
-    smoking: false,
-    petFriendly: true,
-    host: {
-      name: 'Hans Mueller',
-      verified: true,
-      isSuperhost: true,
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face'
-    },
-    description: 'Cozy mountain chalet with breathtaking alpine views. Perfect for skiing and hiking adventures.'
-  }
-];
-
-const amenityIcons = {
-  wifi: Wifi,
-  pool: Waves,
-  parking: Car,
-  kitchen: Coffee,
-  gym: Dumbbell,
-  spa: Heart,
-  restaurant: Utensils,
-  tv: Tv,
-  aircon: Wind,
-  balcony: Mountain,
-  bath: Bath,
-  minibar: Coffee,
-  'mountain-view': Mountain,
-  fireplace: Sparkles
-};
-
-const sortOptions = [
-  { value: 'price-low', label: 'Price: Low to High' },
-  { value: 'price-high', label: 'Price: High to Low' },
-  { value: 'rating', label: 'Highest Rated' },
-  { value: 'distance', label: 'Distance from Center' },
-  { value: 'eco-score', label: 'Eco-Friendliness' }
-];
-
-const currencies = ['USD', 'EUR', 'GBP', 'JPY'];
-
-interface PropertySearchResultsProps {
-  onPropertySelect: (property: Property) => void;
-  onBackToSearch?: () => void;
+interface PriceComparison {
+  averagePrice: number;
+  priceRange: [number, number];
+  dealCount: number;
+  priceChangePercentage: number;
 }
 
-export function PropertySearchResults({ onPropertySelect, onBackToSearch }: PropertySearchResultsProps) {
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('grid');
-  const [showFilters, setShowFilters] = useState(true);
-  const [sortBy, setSortBy] = useState('price-low');
-  const [currency, setCurrency] = useState('USD');
-  const [priceRange, setPriceRange] = useState([0, 1000]);
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+interface ViewMode {
+  type: 'grid' | 'list' | 'map';
+  density: 'compact' | 'normal' | 'spacious';
+}
+
+// Enhanced component with full backend integration
+const PropertySearchResults: React.FC = () => {
+  const queryClient = useQueryClient();
   
-  const [filters, setFilters] = useState({
-    propertyTypes: [] as string[],
-    amenities: [] as string[],
-    roomFeatures: [] as string[],
-    hostPreferences: [] as string[],
-    accessibility: [] as string[],
-    ecoFriendly: false,
-    instantBook: false,
-    petFriendly: false,
-    smokingAllowed: false,
-    minRating: 0,
-    bedrooms: 0,
-    bathrooms: 0
+  // State management for filters and UI
+  const [filters, setFilters] = useState<ExtendedPropertySearchFilters>({
+    location: '',
+    checkIn: '',
+    checkOut: '',
+    guests: 2,
+    priceMin: 0,
+    priceMax: 1000,
+    propertyType: [],
+    amenities: [],
+    rating: 0,
+    distance: 25,
+    page: 1,
+    limit: 20,
+    sortBy: 'popularity',
+    sortOrder: 'desc'
   });
+
+  const [viewMode, setViewMode] = useState<ViewMode>({
+    type: 'grid',
+    density: 'normal'
+  });
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSavedSearches, setShowSavedSearches] = useState(false);
+  const [showPriceComparison, setShowPriceComparison] = useState(false);
+  const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [recentlyViewed, setRecentlyViewed] = useState<string[]>([]);
+
+  // Infinite query for property search with pagination
+  const {
+    data: searchData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: searchLoading,
+    isError: searchError,
+    refetch: refetchSearch
+  } = useInfiniteQuery({
+    queryKey: ['properties', 'search', filters],
+    queryFn: ({ pageParam = 1 }) => 
+      propertyService.searchProperties({
+        ...filters,
+        page: pageParam,
+        location: searchQuery || filters.location
+      } as PropertySearchRequest),
+    getNextPageParam: (lastPage) => 
+      lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+    enabled: !!(filters.location || searchQuery),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Query for user's favorite properties
+  const { data: favoritesData } = useQuery({
+    queryKey: ['properties', 'favorites'],
+    queryFn: () => propertyService.getFavorites(),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  // Query for saved searches
+  const { data: savedSearchesData } = useQuery({
+    queryKey: ['properties', 'saved-searches'],
+    queryFn: () => propertyService.getSavedSearches(),
+    staleTime: 15 * 60 * 1000, // 15 minutes
+  });
+
+  // Query for price comparison
+  const { data: priceComparisonData } = useQuery({
+    queryKey: ['properties', 'price-comparison', filters.location, filters.checkIn, filters.checkOut],
+    queryFn: () => propertyService.getPriceComparison({
+      location: filters.location || searchQuery,
+      checkIn: filters.checkIn || new Date().toISOString().split('T')[0],
+      checkOut: filters.checkOut || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      guests: filters.guests || 2
+    }),
+    enabled: !!(filters.location || searchQuery) && showPriceComparison,
+    staleTime: 30 * 60 * 1000, // 30 minutes
+  });
+
+  // Mutations for user interactions
+  const favoriteMutation = useMutation({
+    mutationFn: ({ propertyId, action }: { propertyId: string; action: 'add' | 'remove' }) =>
+      action === 'add' 
+        ? propertyService.addToFavorites(propertyId)
+        : propertyService.removeFromFavorites(propertyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['properties', 'favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['properties', 'search'] });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Favorite Action Failed',
+        description: error instanceof Error ? error.message : 'Unable to update favorites',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const saveSearchMutation = useMutation({
+    mutationFn: (search: Omit<SavedSearch, 'id' | 'createdAt' | 'matchCount'>) =>
+      propertyService.saveSearch(search),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['properties', 'saved-searches'] });
+      toast({
+        title: 'Search Saved',
+        description: 'You will be notified of new matching properties'
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Save Failed',
+        description: error instanceof Error ? error.message : 'Unable to save search',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  // Flatten all properties from infinite query pages
+  const allProperties = useMemo(() => {
+    return searchData?.pages?.flatMap(page => page.properties) || [];
+  }, [searchData]);
+
+  // Filter properties based on current criteria (client-side refinement)
+  const filteredProperties = useMemo(() => {
+    return allProperties.filter(property => {
+      if (filters.rating && property.rating < filters.rating) return false;
+      if (filters.instantBook && !property.instantBook) return false;
+      if (filters.isEcoFriendly && !property.isActive) return false; // Using isActive as eco-friendly placeholder
+      if (filters.accessibility && !property.rules?.pets) return false; // Using pets as accessibility placeholder
+      if (filters.petFriendly !== undefined && property.rules?.pets !== filters.petFriendly) return false;
+      
+      return true;
+    });
+  }, [allProperties, filters]);
+
+  // Sort properties
+  const sortedProperties = useMemo(() => {
+    const sorted = [...filteredProperties];
+    
+    switch (filters.sortBy) {
+      case 'price':
+        return sorted.sort((a, b) => 
+          filters.sortOrder === 'asc' ? a.pricing.basePrice - b.pricing.basePrice : b.pricing.basePrice - a.pricing.basePrice
+        );
+      case 'rating':
+        return sorted.sort((a, b) => 
+          filters.sortOrder === 'asc' ? a.rating - b.rating : b.rating - a.rating
+        );
+      case 'distance':
+        return sorted.sort((a, b) => {
+          const aDistance = a.location?.latitude && a.location?.longitude ? 
+            Math.sqrt(Math.pow(a.location.latitude, 2) + Math.pow(a.location.longitude, 2)) : 0;
+          const bDistance = b.location?.latitude && b.location?.longitude ? 
+            Math.sqrt(Math.pow(b.location.latitude, 2) + Math.pow(b.location.longitude, 2)) : 0;
+          return filters.sortOrder === 'asc' ? aDistance - bDistance : bDistance - aDistance;
+        });
+      default:
+        return sorted;
+    }
+  }, [filteredProperties, filters.sortBy, filters.sortOrder]);
+
+  // Handle search form submission
+  const handleSearch = useCallback(async () => {
+    const searchFilters = {
+      ...filters,
+      location: searchQuery || filters.location,
+      page: 1
+    };
+    
+    setFilters(searchFilters);
+    
+    // Save search query for autocomplete
+    if (searchQuery) {
+      const recentSearches = JSON.parse(localStorage.getItem('recent_searches') || '[]');
+      const updatedSearches = [searchQuery, ...recentSearches.filter((s: string) => s !== searchQuery)].slice(0, 5);
+      localStorage.setItem('recent_searches', JSON.stringify(updatedSearches));
+    }
+  }, [filters, searchQuery]);
+
+  // Handle favorite toggle
+  const handleFavoriteToggle = useCallback(async (propertyId: string) => {
+    const isFavorite = favoritesData?.properties?.some(fav => fav.id === propertyId);
+    favoriteMutation.mutate({ 
+      propertyId, 
+      action: isFavorite ? 'remove' : 'add' 
+    });
+  }, [favoritesData, favoriteMutation]);
+
+  // Handle property view tracking
+  const handlePropertyView = useCallback((propertyId: string) => {
+    setRecentlyViewed(prev => {
+      const updated = [propertyId, ...prev.filter(id => id !== propertyId)].slice(0, 10);
+      localStorage.setItem('recently_viewed_properties', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  // Save current search
+  const handleSaveSearch = useCallback(async () => {
+    const searchName = prompt('Enter a name for this search:');
+    if (searchName) {
+      saveSearchMutation.mutate({
+        name: searchName,
+        filters,
+        alertsEnabled: true
+      });
+    }
+  }, [filters, saveSearchMutation]);
+
+  // Load more properties (infinite scroll)
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Load recently viewed from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('recently_viewed_properties');
+    if (stored) {
+      setRecentlyViewed(JSON.parse(stored));
+    }
+  }, []);
+
+  // Debounce search when filters change
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (filters.location || searchQuery) {
+        refetchSearch();
+      }
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  }, [filters, searchQuery, refetchSearch]);
+
+  const amenityIcons = {
+    wifi: Wifi,
+    pool: Waves,
+    parking: Car,
+    kitchen: Coffee,
+    gym: Dumbbell,
+    spa: Heart,
+    restaurant: Utensils,
+    tv: Tv,
+    aircon: Wind,
+    balcony: Mountain,
+    bath: Bath,
+    minibar: Coffee,
+    'mountain-view': Mountain,
+    fireplace: Sparkles
+  };
+
+  const sortOptions = [
+    { value: 'popularity', label: 'Most Popular' },
+    { value: 'price', label: 'Price: Low to High' },
+    { value: 'rating', label: 'Highest Rated' },
+    { value: 'distance', label: 'Distance' },
+    { value: 'newest', label: 'Newest First' }
+  ];
 
   const propertyTypes = ['Apartment', 'Villa', 'Hotel', 'House', 'Condo', 'Chalet', 'Loft', 'Treehouse'];
   const amenities = ['wifi', 'pool', 'parking', 'kitchen', 'gym', 'spa', 'restaurant', 'aircon'];
-  const roomFeatures = ['balcony', 'mountain-view', 'bath', 'tv', 'minibar', 'fireplace'];
-  const hostPreferences = ['superhost', 'instant-book', 'verified'];
-  const accessibilityFeatures = ['wheelchair-accessible', 'visual-aids', 'hearing-aids'];
 
-  // Filter properties based on current filters
-  const filteredProperties = mockProperties.filter(property => {
-    // Property type filter
-    if (filters.propertyTypes.length > 0 && !filters.propertyTypes.includes(property.type)) {
-      return false;
-    }
+  // Property Card Component
+  const PropertyCard = ({ property }: { property: Property }) => {
+    const isFavorite = favoritesData?.properties?.some(fav => fav.id === property.id);
     
-    // Price range filter
-    if (property.price < priceRange[0] || property.price > priceRange[1]) {
-      return false;
-    }
-    
-    // Quick filters
-    if (filters.ecoFriendly && !property.isEcoFriendly) return false;
-    if (filters.instantBook && !property.instantBook) return false;
-    if (filters.petFriendly && !property.petFriendly) return false;
-    if (filters.smokingAllowed && !property.smoking) return false;
-    
-    // Amenities filter
-    if (filters.amenities.length > 0) {
-      const hasAllAmenities = filters.amenities.every(amenity => 
-        property.amenities.includes(amenity)
-      );
-      if (!hasAllAmenities) return false;
-    }
-    
-    // Room features filter
-    if (filters.roomFeatures.length > 0) {
-      const hasAllFeatures = filters.roomFeatures.every(feature => 
-        property.amenities.includes(feature)
-      );
-      if (!hasAllFeatures) return false;
-    }
-    
-    // Rating filter
-    if (property.rating < filters.minRating) return false;
-    
-    // Bedrooms filter
-    if (filters.bedrooms > 0 && (property.bedrooms || 0) < filters.bedrooms) return false;
-    
-    // Bathrooms filter
-    if (filters.bathrooms > 0 && (property.bathrooms || 0) < filters.bathrooms) return false;
-    
-    return true;
-  });
-
-  // Sort properties
-  const sortedProperties = [...filteredProperties].sort((a, b) => {
-    switch (sortBy) {
-      case 'price-low':
-        return a.price - b.price;
-      case 'price-high':
-        return b.price - a.price;
-      case 'rating':
-        return b.rating - a.rating;
-      case 'distance':
-        return parseFloat(a.distance) - parseFloat(b.distance);
-      case 'eco-score':
-        return (b.isEcoFriendly ? 1 : 0) - (a.isEcoFriendly ? 1 : 0);
-      default:
-        return 0;
-    }
-  });
-
-  const clearFilter = (filterType: string, value?: string) => {
-    if (value) {
-      setFilters({
-        ...filters,
-        [filterType]: (filters[filterType as keyof typeof filters] as string[]).filter(v => v !== value)
-      });
-    } else {
-      setFilters({
-        ...filters,
-        [filterType]: filterType === 'propertyTypes' || filterType === 'amenities' || filterType === 'roomFeatures' || filterType === 'hostPreferences' || filterType === 'accessibility' ? [] : false
-      });
-    }
-  };
-
-  const clearAllFilters = () => {
-    setFilters({
-      propertyTypes: [],
-      amenities: [],
-      roomFeatures: [],
-      hostPreferences: [],
-      accessibility: [],
-      ecoFriendly: false,
-      instantBook: false,
-      petFriendly: false,
-      smokingAllowed: false,
-      minRating: 0,
-      bedrooms: 0,
-      bathrooms: 0
-    });
-    setPriceRange([0, 1000]);
-  };
-
-  const getActiveFilterCount = () => {
-    let count = 0;
-    if (filters.propertyTypes.length > 0) count += filters.propertyTypes.length;
-    if (filters.amenities.length > 0) count += filters.amenities.length;
-    if (filters.roomFeatures.length > 0) count += filters.roomFeatures.length;
-    if (filters.ecoFriendly) count++;
-    if (filters.instantBook) count++;
-    if (filters.petFriendly) count++;
-    if (filters.minRating > 0) count++;
-    if (filters.bedrooms > 0) count++;
-    if (filters.bathrooms > 0) count++;
-    if (priceRange[0] > 0 || priceRange[1] < 1000) count++;
-    return count;
-  };
-
-  const renderFilters = () => (
-    <Card className="p-6 h-fit">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-semibold">Filters</h3>
-        {getActiveFilterCount() > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearAllFilters}>
-            Clear all ({getActiveFilterCount()})
+    return (
+      <Card 
+        className="group overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer"
+        onClick={() => handlePropertyView(property.id)}
+      >
+        <div className="relative">
+          <div className="aspect-video overflow-hidden">
+            <img
+              src={property.photos?.[0]?.url || '/placeholder-property.jpg'}
+              alt={property.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          </div>
+          
+          {/* Overlay badges */}
+          <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+            {property.isFeatured && (
+              <Badge className="bg-yellow-500 text-white">
+                <Star className="w-3 h-3 mr-1" />
+                Featured
+              </Badge>
+            )}
+            {property.type?.name && (
+              <Badge variant="secondary" className="bg-white/90 text-gray-800">
+                {property.type.name}
+              </Badge>
+            )}
+          </div>
+          
+          {/* Favorite button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute top-3 right-3 bg-white/90 hover:bg-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleFavoriteToggle(property.id);
+            }}
+            disabled={favoriteMutation.isPending}
+          >
+            <Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
           </Button>
-        )}
-      </div>
+          
+          {/* Deal indicator */}
+          {property.pricing?.discounts?.[0] && (
+            <Badge className="absolute bottom-3 left-3 bg-green-500 text-white">
+              <Percent className="w-3 h-3 mr-1" />
+              {property.pricing.discounts[0].percentage}% Off
+            </Badge>
+          )}
+        </div>
+        
+        <div className="p-4">
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex-1">
+              <h3 className="font-semibold text-lg line-clamp-1">{property.title}</h3>
+              <p className="text-sm text-muted-foreground flex items-center">
+                <MapPin className="w-3 h-3 mr-1" />
+                {property.location?.address || 'Location not specified'}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center">
+              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+              <span className="text-sm font-medium ml-1">{property.rating}</span>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              ({property.reviewCount} reviews)
+            </span>
+            {property.host?.verifications?.includes('verified') && (
+              <Badge variant="outline" className="text-xs">
+                <Shield className="w-3 h-3 mr-1" />
+                Verified
+              </Badge>
+            )}
+          </div>
+          
+          {/* Amenities */}
+          <div className="flex items-center gap-1 mb-3">
+            {property.amenities?.slice(0, 4).map((amenity) => {
+              const Icon = amenityIcons[amenity.name as keyof typeof amenityIcons];
+              return Icon ? (
+                <Icon key={amenity.id} className="w-4 h-4 text-muted-foreground" />
+              ) : null;
+            })}
+            {property.amenities?.length > 4 && (
+              <span className="text-xs text-muted-foreground">
+                +{property.amenities.length - 4} more
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-bold">${property.pricing?.basePrice || 0}</span>
+                <span className="text-sm text-muted-foreground">per night</span>
+              </div>
+              {property.pricing?.discounts?.[0] && (
+                <div className="text-xs text-muted-foreground line-through">
+                  ${Math.round(property.pricing.basePrice / (1 - property.pricing.discounts[0].percentage / 100))}
+                </div>
+              )}
+            </div>
+            
+            {property.instantBook && (
+              <Badge variant="outline" className="text-xs">
+                <Zap className="w-3 h-3 mr-1" />
+                Instant Book
+              </Badge>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
-      <div className="space-y-6">
-        {/* Price Range */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-medium">Price Range</h4>
-            <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger className="w-20">
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Search Header */}
+      <div className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center gap-4">
+            {/* Search Input */}
+            <div className="flex-1 max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search destinations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            
+            {/* Date Pickers */}
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={filters.checkIn}
+                onChange={(e) => setFilters(prev => ({ ...prev, checkIn: e.target.value }))}
+                className="w-40"
+              />
+              <span className="text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={filters.checkOut}
+                onChange={(e) => setFilters(prev => ({ ...prev, checkOut: e.target.value }))}
+                className="w-40"
+              />
+            </div>
+            
+            {/* Guests */}
+            <Select 
+              value={filters.guests?.toString()} 
+              onValueChange={(value) => setFilters(prev => ({ ...prev, guests: parseInt(value) }))}
+            >
+              <SelectTrigger className="w-32">
+                <Users className="w-4 h-4 mr-2" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {currencies.map((curr) => (
-                  <SelectItem key={curr} value={curr}>{curr}</SelectItem>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                  <SelectItem key={num} value={num.toString()}>
+                    {num} {num === 1 ? 'Guest' : 'Guests'}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <Slider
-            value={priceRange}
-            onValueChange={setPriceRange}
-            max={1000}
-            step={10}
-            className="mb-2"
-          />
-          <div className="flex justify-between text-sm text-muted-foreground">
-            <span>${priceRange[0]}</span>
-            <span>${priceRange[1]}+</span>
-          </div>
-        </div>
-
-        {/* Property Type */}
-        <div>
-          <h4 className="font-medium mb-3">Property Type</h4>
-          <div className="space-y-2 max-h-40 overflow-y-auto">
-            {propertyTypes.map((type) => (
-              <div key={type} className="flex items-center space-x-2">
-                <Checkbox
-                  id={type}
-                  checked={filters.propertyTypes.includes(type)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      setFilters({
-                        ...filters,
-                        propertyTypes: [...filters.propertyTypes, type]
-                      });
-                    } else {
-                      setFilters({
-                        ...filters,
-                        propertyTypes: filters.propertyTypes.filter(t => t !== type)
-                      });
-                    }
-                  }}
-                />
-                <Label htmlFor={type} className="text-sm">{type}</Label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Amenities */}
-        <div>
-          <h4 className="font-medium mb-3">Amenities</h4>
-          <div className="grid grid-cols-2 gap-2">
-            {amenities.map((amenity) => {
-              const Icon = amenityIcons[amenity as keyof typeof amenityIcons];
-              return (
-                <div key={amenity} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`amenity-${amenity}`}
-                    checked={filters.amenities.includes(amenity)}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setFilters({
-                          ...filters,
-                          amenities: [...filters.amenities, amenity]
-                        });
-                      } else {
-                        setFilters({
-                          ...filters,
-                          amenities: filters.amenities.filter(a => a !== amenity)
-                        });
-                      }
-                    }}
-                  />
-                  <Icon className="w-3 h-3" />
-                  <Label htmlFor={`amenity-${amenity}`} className="text-sm capitalize">{amenity}</Label>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Room Features */}
-        <div>
-          <h4 className="font-medium mb-3">Room Features</h4>
-          <div className="space-y-2">
-            {roomFeatures.map((feature) => {
-              const Icon = amenityIcons[feature as keyof typeof amenityIcons];
-              return (
-                <div key={feature} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`feature-${feature}`}
-                    checked={filters.roomFeatures.includes(feature)}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setFilters({
-                          ...filters,
-                          roomFeatures: [...filters.roomFeatures, feature]
-                        });
-                      } else {
-                        setFilters({
-                          ...filters,
-                          roomFeatures: filters.roomFeatures.filter(f => f !== feature)
-                        });
-                      }
-                    }}
-                  />
-                  {Icon && <Icon className="w-3 h-3" />}
-                  <Label htmlFor={`feature-${feature}`} className="text-sm capitalize">{feature.replace('-', ' ')}</Label>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Rooms & Guests */}
-        <div>
-          <h4 className="font-medium mb-3">Rooms & Guests</h4>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm">Bedrooms</Label>
-              <div className="flex items-center space-x-2 mt-1">
-                {[0, 1, 2, 3, 4].map((num) => (
-                  <Button
-                    key={num}
-                    variant={filters.bedrooms === num ? 'default' : 'outline'}
-                    size="sm"
-                    className="w-10 h-8"
-                    onClick={() => setFilters({ ...filters, bedrooms: num })}
-                  >
-                    {num === 0 ? 'Any' : num}
-                  </Button>
-                ))}
-              </div>
-            </div>
             
-            <div>
-              <Label className="text-sm">Bathrooms</Label>
-              <div className="flex items-center space-x-2 mt-1">
-                {[0, 1, 2, 3].map((num) => (
-                  <Button
-                    key={num}
-                    variant={filters.bathrooms === num ? 'default' : 'outline'}
-                    size="sm"
-                    className="w-10 h-8"
-                    onClick={() => setFilters({ ...filters, bathrooms: num })}
-                  >
-                    {num === 0 ? 'Any' : num}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Host Preferences */}
-        <div>
-          <h4 className="font-medium mb-3">Host Preferences</h4>
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="superhost"
-                checked={filters.hostPreferences.includes('superhost')}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setFilters({
-                      ...filters,
-                      hostPreferences: [...filters.hostPreferences, 'superhost']
-                    });
-                  } else {
-                    setFilters({
-                      ...filters,
-                      hostPreferences: filters.hostPreferences.filter(p => p !== 'superhost')
-                    });
-                  }
-                }}
-              />
-              <Star className="w-3 h-3 text-yellow-400" />
-              <Label htmlFor="superhost" className="text-sm">Superhost</Label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="instantBookFilter"
-                checked={filters.instantBook}
-                onCheckedChange={(checked) => 
-                  setFilters({ ...filters, instantBook: !!checked })
-                }
-              />
-              <Clock className="w-3 h-3 text-primary" />
-              <Label htmlFor="instantBookFilter" className="text-sm">Instant book</Label>
-            </div>
-          </div>
-        </div>
-
-        {/* Accessibility */}
-        <div>
-          <h4 className="font-medium mb-3">Accessibility</h4>
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="accessible"
-                checked={filters.accessibility.includes('wheelchair-accessible')}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setFilters({
-                      ...filters,
-                      accessibility: [...filters.accessibility, 'wheelchair-accessible']
-                    });
-                  } else {
-                    setFilters({
-                      ...filters,
-                      accessibility: filters.accessibility.filter(a => a !== 'wheelchair-accessible')
-                    });
-                  }
-                }}
-              />
-              <Accessibility className="w-3 h-3" />
-              <Label htmlFor="accessible" className="text-sm">Wheelchair accessible</Label>
-            </div>
-          </div>
-        </div>
-
-        {/* Special Features */}
-        <div>
-          <h4 className="font-medium mb-3">Special Features</h4>
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="ecoFriendlyFilter"
-                checked={filters.ecoFriendly}
-                onCheckedChange={(checked) => 
-                  setFilters({ ...filters, ecoFriendly: !!checked })
-                }
-              />
-              <Leaf className="w-3 h-3 text-success" />
-              <Label htmlFor="ecoFriendlyFilter" className="text-sm">Eco-friendly</Label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="petFriendlyFilter"
-                checked={filters.petFriendly}
-                onCheckedChange={(checked) => 
-                  setFilters({ ...filters, petFriendly: !!checked })
-                }
-              />
-              <Heart className="w-3 h-3 text-secondary" />
-              <Label htmlFor="petFriendlyFilter" className="text-sm">Pet-friendly</Label>
-            </div>
-          </div>
-        </div>
-
-        {/* Rating */}
-        <div>
-          <h4 className="font-medium mb-3">Minimum Rating</h4>
-          <div className="flex items-center space-x-2">
-            {[0, 3, 4, 4.5].map((rating) => (
-              <Button
-                key={rating}
-                variant={filters.minRating === rating ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFilters({ ...filters, minRating: rating })}
-              >
-                {rating === 0 ? 'Any' : `${rating}+`}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-
-  const renderPropertyCard = (property: Property) => (
-    <Card 
-      key={property.id} 
-      className="overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-300 group"
-      onClick={() => setSelectedProperty(property)}
-    >
-      <div className="relative">
-        <ImageWithFallback
-          src={property.images[0]}
-          alt={property.title}
-          className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
-        />
-        
-        {/* Heart button */}
-        <button 
-          className="absolute top-3 right-3 p-2 bg-white/80 hover:bg-white rounded-full transition-colors z-10"
-          onClick={(e) => {
-            e.stopPropagation();
-            // Handle favorite toggle
-          }}
-        >
-          <Heart className="w-4 h-4" />
-        </button>
-        
-        {/* Image counter */}
-        <div className="absolute bottom-3 right-3 bg-black/50 text-black px-2 py-1 rounded text-xs">
-          1 / {property.images.length}
-        </div>
-        
-        {/* Badges */}
-        <div className="absolute top-3 left-3 space-y-2">
-          {property.isEcoFriendly && (
-            <Badge className="bg-success text-success-foreground">
-              <Leaf className="w-3 h-3 mr-1" />
-              Eco-friendly
-            </Badge>
-          )}
-          {property.instantBook && (
-            <Badge className="bg-primary text-primary-foreground">
-              <Clock className="w-3 h-3 mr-1" />
-              Instant Book
-            </Badge>
-          )}
-          {property.host.isSuperhost && (
-            <Badge className="bg-yellow-500 text-black">
-              <Star className="w-3 h-3 mr-1" />
-              Superhost
-            </Badge>
-          )}
-        </div>
-      </div>
-      
-      <div className="p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h3 className="font-semibold line-clamp-1 mb-1">{property.title}</h3>
-            <p className="text-sm text-muted-foreground">{property.location}</p>
-            <p className="text-xs text-muted-foreground">{property.distance}</p>
-          </div>
-          <div className="flex items-center space-x-1 ml-2">
-            <Star className="w-4 h-4 fill-current text-yellow-400" />
-            <span className="text-sm font-medium">{property.rating}</span>
-            <span className="text-xs text-muted-foreground">({property.reviews})</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center space-x-3">
-            {property.bedrooms && (
-              <span>{property.bedrooms} bed{property.bedrooms > 1 ? 's' : ''}</span>
-            )}
-            {property.bathrooms && (
-              <span>{property.bathrooms} bath{property.bathrooms > 1 ? 's' : ''}</span>
-            )}
-            {property.maxGuests && (
-              <span>{property.maxGuests} guests</span>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          {property.amenities.slice(0, 4).map((amenity) => {
-            const Icon = amenityIcons[amenity as keyof typeof amenityIcons];
-            return Icon ? <Icon key={amenity} className="w-4 h-4 text-muted-foreground" /> : null;
-          })}
-          {property.amenities.length > 4 && (
-            <span className="text-sm text-muted-foreground">+{property.amenities.length - 4}</span>
-          )}
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-xl font-semibold">${property.price}</span>
-            <span className="text-sm text-muted-foreground"> /night</span>
-          </div>
-          <Button 
-            size="sm" 
-            onClick={(e) => {
-              e.stopPropagation();
-              onPropertySelect(property);
-            }}
-          >
-            View Details
-          </Button>
-        </div>
-      </div>
-    </Card>
-  );
-
-  return (
-    <div className="container mx-auto px-4 py-6 space-y-6">
-      {/* Header with search modification */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          {onBackToSearch && (
-            <Button variant="outline" size="icon" onClick={onBackToSearch}>
-              <ChevronLeft className="w-4 h-4" />
+            <Button onClick={handleSearch} disabled={searchLoading}>
+              {searchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              Search
             </Button>
-          )}
+          </div>
+        </div>
+      </div>
+
+      {/* Results Header */}
+      <div className="container mx-auto px-4 py-6">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">
-              {sortedProperties.length} stays found
+              {searchData?.pages?.[0]?.meta?.total || 0} properties found
             </h1>
-            <p className="text-muted-foreground">
-              Bali • Mar 15-20 • 2 guests
-            </p>
+            {(filters.location || searchQuery) && (
+              <p className="text-muted-foreground">
+                in {filters.location || searchQuery}
+                {filters.checkIn && filters.checkOut && (
+                  <span> • {filters.checkIn} to {filters.checkOut}</span>
+                )}
+              </p>
+            )}
           </div>
-        </div>
-        
-        <Button variant="outline">
-          <SlidersHorizontal className="w-4 h-4 mr-2" />
-          Modify search
-        </Button>
-      </div>
-
-      {/* Active filters */}
-      {getActiveFilterCount() > 0 && (
-        <div className="flex items-center space-x-2 flex-wrap">
-          <span className="text-sm text-muted-foreground">Filters:</span>
-          {filters.propertyTypes.map((type) => (
-            <Badge key={type} variant="secondary" className="flex items-center space-x-1">
-              <span>{type}</span>
-              <button onClick={() => clearFilter('propertyTypes', type)}>
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          ))}
-          {filters.amenities.map((amenity) => (
-            <Badge key={amenity} variant="secondary" className="flex items-center space-x-1">
-              <span className="capitalize">{amenity}</span>
-              <button onClick={() => clearFilter('amenities', amenity)}>
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          ))}
-          {filters.ecoFriendly && (
-            <Badge variant="secondary" className="flex items-center space-x-1">
-              <Leaf className="w-3 h-3" />
-              <span>Eco-friendly</span>
-              <button onClick={() => clearFilter('ecoFriendly')}>
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          <Button variant="ghost" size="sm" onClick={clearAllFilters}>
-            Clear all
-          </Button>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            Filters {getActiveFilterCount() > 0 && `(${getActiveFilterCount()})`}
-          </Button>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          {/* View Mode Toggle */}
-          <div className="flex items-center space-x-1 border rounded-lg p-1">
-            <Button
-              variant={viewMode === 'grid' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('grid')}
-            >
-              <Grid3X3 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-            >
-              <List className="w-4 h-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'map' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('map')}
-            >
-              <Map className="w-4 h-4" />
-            </Button>
-          </div>
-
-          {/* Sort */}
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-48">
-              <ArrowUpDown className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {sortOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Filters Sidebar */}
-        {showFilters && (
-          <div className="lg:col-span-1">
-            {renderFilters()}
-          </div>
-        )}
-
-        {/* Results */}
-        <div className={showFilters ? 'lg:col-span-3' : 'lg:col-span-4'}>
-          {viewMode === 'grid' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {sortedProperties.map(renderPropertyCard)}
+          
+          <div className="flex items-center gap-3">
+            {/* View Mode Toggle */}
+            <div className="flex items-center border rounded-lg p-1">
+              <Button
+                variant={viewMode.type === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode(prev => ({ ...prev, type: 'grid' }))}
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode.type === 'list' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode(prev => ({ ...prev, type: 'list' }))}
+              >
+                <List className="w-4 h-4" />
+              </Button>
+              <Button
+                variant={viewMode.type === 'map' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode(prev => ({ ...prev, type: 'map' }))}
+              >
+                <Map className="w-4 h-4" />
+              </Button>
             </div>
-          )}
 
-          {viewMode === 'list' && (
-            <div className="space-y-4">
-              {sortedProperties.map((property) => (
-                <Card key={property.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
-                  <div className="flex">
-                    <div className="w-80 h-48 relative">
-                      <ImageWithFallback
-                        src={property.images[0]}
-                        alt={property.title}
-                        className="w-full h-full object-cover"
-                      />
-                      {property.isEcoFriendly && (
-                        <Badge className="absolute top-3 left-3 bg-success text-success-foreground">
-                          <Leaf className="w-3 h-3 mr-1" />
-                          Eco-friendly
-                        </Badge>
-                      )}
+            {/* Sort */}
+            <Select 
+              value={filters.sortBy} 
+              onValueChange={(value) => setFilters(prev => ({ ...prev, sortBy: value as any }))}
+            >
+              <SelectTrigger className="w-48">
+                <ArrowUpDown className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sortOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* Filters Toggle */}
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              Filters
+            </Button>
+            
+            {/* Additional Actions */}
+            <Button
+              variant="outline"
+              onClick={handleSaveSearch}
+              disabled={saveSearchMutation.isPending}
+            >
+              <BookmarkPlus className="w-4 h-4 mr-2" />
+              Save Search
+            </Button>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Filters Sidebar */}
+          {showFilters && (
+            <div className="lg:col-span-1">
+              <Card className="p-6 sticky top-24">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-semibold">Filters</h3>
+                  <Button variant="ghost" size="sm" onClick={() => setFilters({
+                    ...filters,
+                    propertyType: [],
+                    amenities: [],
+                    priceMin: 0,
+                    priceMax: 1000,
+                    rating: 0,
+                    isEcoFriendly: false,
+                    instantBook: false,
+                    petFriendly: false
+                  })}>
+                    Clear all
+                  </Button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Price Range */}
+                  <div>
+                    <Label className="font-medium mb-3 block">Price Range</Label>
+                    <Slider
+                      value={[filters.priceMin || 0, filters.priceMax || 1000]}
+                      onValueChange={([min, max]) => setFilters(prev => ({ 
+                        ...prev, 
+                        priceMin: min, 
+                        priceMax: max 
+                      }))}
+                      max={1000}
+                      step={10}
+                      className="mb-2"
+                    />
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                      <span>${filters.priceMin || 0}</span>
+                      <span>${filters.priceMax || 1000}+</span>
                     </div>
-                    <div className="flex-1 p-6">
-                      <div className="flex justify-between items-start h-full">
-                        <div className="space-y-2 flex-1">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h3 className="text-lg font-semibold">{property.title}</h3>
-                              <p className="text-muted-foreground">{property.location}</p>
-                              <p className="text-sm text-muted-foreground">{property.distance}</p>
-                            </div>
-                            <button className="p-2 hover:bg-muted rounded-full">
-                              <Heart className="w-4 h-4" />
-                            </button>
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            <Star className="w-4 h-4 fill-current text-yellow-400" />
-                            <span className="text-sm">{property.rating} ({property.reviews} reviews)</span>
-                            {property.host.isSuperhost && (
-                              <Badge variant="outline" className="text-xs">Superhost</Badge>
-                            )}
-                          </div>
-                          
-                          <div className="text-sm text-muted-foreground">
-                            {property.bedrooms} bed • {property.bathrooms} bath • {property.maxGuests} guests
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            {property.amenities.slice(0, 6).map((amenity) => {
-                              const Icon = amenityIcons[amenity as keyof typeof amenityIcons];
-                              return Icon ? <Icon key={amenity} className="w-4 h-4 text-muted-foreground" /> : null;
-                            })}
-                          </div>
+                  </div>
+
+                  {/* Property Type */}
+                  <div>
+                    <Label className="font-medium mb-3 block">Property Type</Label>
+                    <div className="space-y-2">
+                      {propertyTypes.map((type) => (
+                        <div key={type} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={type}
+                            checked={filters.propertyType?.includes(type) || false}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  propertyType: [...(prev.propertyType || []), type]
+                                }));
+                              } else {
+                                setFilters(prev => ({
+                                  ...prev,
+                                  propertyType: (prev.propertyType || []).filter(t => t !== type)
+                                }));
+                              }
+                            }}
+                          />
+                          <Label htmlFor={type} className="text-sm">{type}</Label>
                         </div>
-                        
-                        <div className="text-right ml-6">
-                          <div className="text-2xl font-semibold">${property.price}</div>
-                          <div className="text-sm text-muted-foreground">per night</div>
-                          <Button className="mt-3" onClick={() => onPropertySelect(property)}>
-                            View Details
-                          </Button>
-                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Amenities */}
+                  <div>
+                    <Label className="font-medium mb-3 block">Amenities</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {amenities.map((amenity) => {
+                        const Icon = amenityIcons[amenity as keyof typeof amenityIcons];
+                        return (
+                          <div key={amenity} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={amenity}
+                              checked={filters.amenities?.includes(amenity) || false}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setFilters(prev => ({
+                                    ...prev,
+                                    amenities: [...(prev.amenities || []), amenity]
+                                  }));
+                                } else {
+                                  setFilters(prev => ({
+                                    ...prev,
+                                    amenities: (prev.amenities || []).filter(a => a !== amenity)
+                                  }));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={amenity} className="text-sm flex items-center space-x-1">
+                              {Icon && <Icon className="w-4 h-4" />}
+                              <span className="capitalize">{amenity}</span>
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Quick Filters */}
+                  <div>
+                    <Label className="font-medium mb-3 block">Quick Filters</Label>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="instant-book"
+                          checked={filters.instantBook || false}
+                          onCheckedChange={(checked) => setFilters(prev => ({ 
+                            ...prev, 
+                            instantBook: !!checked 
+                          }))}
+                        />
+                        <Label htmlFor="instant-book" className="text-sm">Instant Book</Label>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="eco-friendly"
+                          checked={filters.isEcoFriendly || false}
+                          onCheckedChange={(checked) => setFilters(prev => ({ 
+                            ...prev, 
+                            isEcoFriendly: !!checked 
+                          }))}
+                        />
+                        <Label htmlFor="eco-friendly" className="text-sm">Eco-friendly</Label>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="pet-friendly"
+                          checked={filters.petFriendly || false}
+                          onCheckedChange={(checked) => setFilters(prev => ({ 
+                            ...prev, 
+                            petFriendly: !!checked 
+                          }))}
+                        />
+                        <Label htmlFor="pet-friendly" className="text-sm">Pet Friendly</Label>
                       </div>
                     </div>
                   </div>
-                </Card>
-              ))}
+
+                  {/* Rating Filter */}
+                  <div>
+                    <Label className="font-medium mb-3 block">Minimum Rating</Label>
+                    <Select 
+                      value={filters.rating?.toString() || '0'} 
+                      onValueChange={(value) => setFilters(prev => ({ 
+                        ...prev, 
+                        rating: parseInt(value) 
+                      }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Any rating" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Any rating</SelectItem>
+                        <SelectItem value="3">3+ stars</SelectItem>
+                        <SelectItem value="4">4+ stars</SelectItem>
+                        <SelectItem value="4.5">4.5+ stars</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </Card>
             </div>
           )}
 
-          {viewMode === 'map' && (
-            <Card className="h-[600px] flex items-center justify-center">
-              <div className="text-center">
-                <Map className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Interactive Map View</h3>
-                <p className="text-muted-foreground max-w-md">
-                  Map integration would display properties with clustered markers, 
-                  price labels, and interactive property previews on hover.
-                </p>
-                <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-                  <p>• Property markers with price display</p>
-                  <p>• Cluster markers for high-density areas</p>
-                  <p>• Mini property cards on hover</p>
-                  <p>• "Search this area" when map moves</p>
+          {/* Results */}
+          <div className={showFilters ? 'lg:col-span-3' : 'lg:col-span-4'}>
+            {/* Price Comparison Widget */}
+            {showPriceComparison && priceComparisonData && (
+              <Card className="p-4 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold">Price Insights</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPriceComparison(false)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
                 </div>
-              </div>
-            </Card>
-          )}
+                <div className="grid grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Average Price</p>
+                    <p className="text-lg font-semibold">${priceComparisonData.averagePrice}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Price Range</p>
+                    <p className="text-lg font-semibold">
+                      ${priceComparisonData.priceRange[0]} - ${priceComparisonData.priceRange[1]}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Deals Available</p>
+                    <p className="text-lg font-semibold text-green-600">{priceComparisonData.dealCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Price Change</p>
+                    <p className={`text-lg font-semibold ${priceComparisonData.priceChangePercentage >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                      {priceComparisonData.priceChangePercentage >= 0 ? '+' : ''}{priceComparisonData.priceChangePercentage}%
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
 
-          {sortedProperties.length === 0 && (
-            <Card className="p-12 text-center">
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">No properties found</h3>
-                <p className="text-muted-foreground">
-                  Try adjusting your filters or search criteria
-                </p>
-                <Button onClick={clearAllFilters}>Clear all filters</Button>
+            {/* Loading State */}
+            {searchLoading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin" />
+                <span className="ml-2">Searching properties...</span>
               </div>
-            </Card>
-          )}
+            )}
+
+            {/* Error State */}
+            {searchError && (
+              <Alert className="mb-6">
+                <AlertCircle className="w-4 h-4" />
+                <AlertDescription>
+                  Failed to load properties. Please try again.
+                  <Button variant="link" onClick={() => refetchSearch()} className="ml-2">
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Grid View */}
+            {viewMode.type === 'grid' && sortedProperties.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {sortedProperties.map((property) => (
+                  <PropertyCard key={property.id} property={property} />
+                ))}
+              </div>
+            )}
+
+            {/* List View */}
+            {viewMode.type === 'list' && sortedProperties.length > 0 && (
+              <div className="space-y-4">
+                {sortedProperties.map((property) => (
+                  <Card key={property.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                    <div className="flex">
+                      <div className="w-80 h-48 relative">
+                        <img
+                          src={property.photos?.[0]?.url || '/placeholder-property.jpg'}
+                          alt={property.title}
+                          className="w-full h-full object-cover"
+                        />
+                        {property.type?.name && (
+                          <Badge className="absolute top-3 left-3 bg-white/90 text-gray-800">
+                            {property.type.name}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex-1 p-6">
+                        <div className="flex justify-between items-start h-full">
+                          <div className="space-y-2 flex-1">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h3 className="text-lg font-semibold">{property.title}</h3>
+                                <p className="text-muted-foreground">{property.location?.address}</p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFavoriteToggle(property.id);
+                                }}
+                              >
+                                <Heart className={`w-4 h-4 ${
+                                  favoritesData?.properties?.some(fav => fav.id === property.id) 
+                                    ? 'fill-red-500 text-red-500' 
+                                    : 'text-gray-600'
+                                }`} />
+                              </Button>
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <Star className="w-4 h-4 fill-current text-yellow-400" />
+                              <span className="text-sm">{property.rating} ({property.reviewCount} reviews)</span>
+                              {property.host?.verifications?.includes('verified') && (
+                                <Badge variant="outline" className="text-xs">Verified Host</Badge>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              {property.amenities?.slice(0, 6).map((amenity) => {
+                                const Icon = amenityIcons[amenity.name as keyof typeof amenityIcons];
+                                return Icon ? <Icon key={amenity.id} className="w-4 h-4 text-muted-foreground" /> : null;
+                              })}
+                            </div>
+                          </div>
+                          
+                          <div className="text-right ml-6">
+                            <div className="text-2xl font-semibold">${property.pricing?.basePrice || 0}</div>
+                            <div className="text-sm text-muted-foreground">per night</div>
+                            <Button 
+                              className="mt-3" 
+                              onClick={() => handlePropertyView(property.id)}
+                            >
+                              View Details
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Map View */}
+            {viewMode.type === 'map' && (
+              <Card className="h-[600px] flex items-center justify-center">
+                <div className="text-center">
+                  <Map className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Interactive Map View</h3>
+                  <p className="text-muted-foreground max-w-md">
+                    Map integration would display properties with clustered markers, 
+                    price labels, and interactive property previews on hover.
+                  </p>
+                  <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                    <p>• Property markers with price display</p>
+                    <p>• Cluster markers for high-density areas</p>
+                    <p>• Mini property cards on hover</p>
+                    <p>• "Search this area" when map moves</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* No Results */}
+            {!searchLoading && sortedProperties.length === 0 && (filters.location || searchQuery) && (
+              <Card className="p-12 text-center">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">No properties found</h3>
+                  <p className="text-muted-foreground">
+                    Try adjusting your filters or search criteria
+                  </p>
+                  <Button onClick={() => setFilters({
+                    ...filters,
+                    propertyType: [],
+                    amenities: [],
+                    priceMin: 0,
+                    priceMax: 1000,
+                    rating: 0,
+                    isEcoFriendly: false,
+                    instantBook: false,
+                    petFriendly: false
+                  })}>
+                    Clear all filters
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {/* Load More Button */}
+            {hasNextPage && (
+              <div className="flex justify-center mt-8">
+                <Button
+                  onClick={handleLoadMore}
+                  disabled={isFetchingNextPage}
+                  variant="outline"
+                  size="lg"
+                >
+                  {isFetchingNextPage ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Loading more...
+                    </>
+                  ) : (
+                    'Load More Properties'
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default PropertySearchResults;

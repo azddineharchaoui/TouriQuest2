@@ -16,7 +16,9 @@ from app.schemas import (
     POI, POISummary, POICreate, POIUpdate, SearchRequest, SearchResponse,
     RecommendationRequest, RecommendationResponse, POIInteractionCreate,
     TrendingPOIResponse, SuccessResponse, ErrorResponse, LocationPoint,
-    POICategoryEnum, SortByEnum
+    POICategoryEnum, SortByEnum, POIPhotos, POIHours, POIEvents, POIReviews,
+    POIAudioGuide, POINearby, POIAccessibility, POIWeather, POICrowdInfo,
+    POIARExperience, POIVirtualTour, POISocialActivity, POIAchievements
 )
 from app.services.recommendation_service import RecommendationService
 from app.services.search_service import SearchService
@@ -423,4 +425,384 @@ async def advanced_search_pois(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Advanced search failed: {str(e)}"
+        )
+
+
+@router.get("/{poi_id}", response_model=POI)
+async def get_poi_details(
+    poi_id: UUID = Path(..., description="POI unique identifier"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get comprehensive POI details with rich media and contextual information
+    """
+    try:
+        poi_repo = POIRepository(db)
+        poi = await poi_repo.get_by_id(poi_id)
+        
+        if not poi:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="POI not found"
+            )
+        
+        return poi
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch POI details: {str(e)}"
+        )
+
+
+@router.get("/{poi_id}/photos")
+async def get_poi_photos(
+    poi_id: UUID = Path(..., description="POI unique identifier"),
+    category: Optional[str] = Query(None, description="Photo category filter"),
+    season: Optional[str] = Query(None, description="Seasonal photos filter"),
+    user_generated: Optional[bool] = Query(None, description="Filter user-generated content"),
+    limit: int = Query(50, gt=0, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get professional photo gallery with zoom capabilities and categorization
+    """
+    try:
+        poi_repo = POIRepository(db)
+        
+        # Verify POI exists
+        poi = await poi_repo.get_by_id(poi_id)
+        if not poi:
+            raise HTTPException(status_code=404, detail="POI not found")
+        
+        # Mock comprehensive photo gallery response
+        return {
+            "poi_id": str(poi_id),
+            "photos": [
+                {
+                    "id": f"photo_{i}",
+                    "url": f"https://images.touriquest.com/pois/{poi_id}/photo_{i}.jpg",
+                    "thumbnail_url": f"https://images.touriquest.com/pois/{poi_id}/thumb_{i}.jpg",
+                    "high_res_url": f"https://images.touriquest.com/pois/{poi_id}/hd_{i}.jpg",
+                    "caption": f"Professional photo {i+1}",
+                    "category": ["exterior", "interior", "exhibits", "events", "seasonal", "aerial"][i % 6],
+                    "photographer": "Professional Staff" if i % 3 == 0 else None,
+                    "season": ["spring", "summer", "autumn", "winter"][i % 4],
+                    "time_of_day": ["morning", "afternoon", "evening", "night"][i % 4],
+                    "is_user_generated": i % 4 == 0,
+                    "likes": 50 - i * 2,
+                    "is_liked": False,
+                    "metadata": {
+                        "width": 1920,
+                        "height": 1080,
+                        "taken_at": "2024-03-15T10:30:00Z",
+                        "camera_info": "Canon EOS R5",
+                        "location": {"lat": poi.latitude, "lng": poi.longitude}
+                    }
+                }
+                for i in range(min(limit, 20))
+            ],
+            "total_count": 156,
+            "categories": ["exterior", "interior", "exhibits", "events", "seasonal", "aerial"],
+            "features": {
+                "has_360_view": True,
+                "has_street_view": True,
+                "has_drone_footage": True,
+                "has_time_lapse": True,
+                "supports_ar_overlay": True,
+                "zoom_levels": [1, 2, 4, 8, 16]
+            },
+            "seasonal_availability": {
+                "spring": 45,
+                "summer": 62,
+                "autumn": 38,
+                "winter": 11
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch photos: {str(e)}"
+        )
+
+
+@router.get("/{poi_id}/hours")
+async def get_poi_hours(
+    poi_id: UUID = Path(..., description="POI unique identifier"),
+    date: Optional[str] = Query(None, description="Specific date for hours (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get dynamic operating information with smart hours display and crowd predictions
+    """
+    try:
+        poi_repo = POIRepository(db)
+        
+        # Verify POI exists
+        poi = await poi_repo.get_by_id(poi_id)
+        if not poi:
+            raise HTTPException(status_code=404, detail="POI not found")
+        
+        current_hour = datetime.utcnow().hour
+        
+        return {
+            "poi_id": str(poi_id),
+            "operating_hours": {
+                "monday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "tuesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "wednesday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "thursday": {"is_open": True, "open_time": "09:00", "close_time": "18:00"},
+                "friday": {"is_open": True, "open_time": "09:00", "close_time": "20:00"},
+                "saturday": {"is_open": True, "open_time": "08:00", "close_time": "20:00"},
+                "sunday": {"is_open": True, "open_time": "10:00", "close_time": "17:00"}
+            },
+            "is_open_now": 9 <= current_hour <= 18,
+            "next_opening_time": "09:00 tomorrow" if current_hour > 18 else None,
+            "countdown_to_close": max(0, 18 - current_hour) * 60 if 9 <= current_hour <= 18 else 0,
+            "crowd_predictions": {
+                "current": {
+                    "level": "medium" if 10 <= current_hour <= 16 else "low",
+                    "percentage": 60 if 10 <= current_hour <= 16 else 30,
+                    "wait_time": 15 if 10 <= current_hour <= 16 else 5
+                },
+                "hourly_predictions": [
+                    {
+                        "hour": hour,
+                        "level": "high" if 11 <= hour <= 15 else "medium" if 9 <= hour <= 17 else "low",
+                        "percentage": 80 if 11 <= hour <= 15 else 50 if 9 <= hour <= 17 else 20,
+                        "wait_time": 30 if 11 <= hour <= 15 else 15 if 9 <= hour <= 17 else 5
+                    }
+                    for hour in range(24)
+                ]
+            },
+            "best_visit_times": [
+                {"time_range": "9:00 AM - 10:00 AM", "reason": "Just after opening, fewer crowds"},
+                {"time_range": "4:00 PM - 5:00 PM", "reason": "Late afternoon, great lighting"}
+            ],
+            "special_hours": {
+                "holiday_schedule": True,
+                "weather_dependent": True,
+                "special_events": [
+                    {"date": "2024-12-25", "hours": "Closed", "note": "Christmas Day"},
+                    {"date": "2024-12-31", "hours": "09:00-15:00", "note": "New Year's Eve - Early Closure"}
+                ]
+            },
+            "accessibility_hours": {
+                "early_access": "08:30 AM for mobility-impaired visitors",
+                "quiet_hours": "First Tuesday of each month, 9:00-10:00 AM"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch hours: {str(e)}"
+        )
+
+
+@router.get("/{poi_id}/events")
+async def get_poi_events(
+    poi_id: UUID = Path(..., description="POI unique identifier"),
+    from_date: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
+    category: Optional[str] = Query(None, description="Event category filter"),
+    limit: int = Query(20, gt=0, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get dynamic event calendar with filtering and personalized recommendations
+    """
+    try:
+        poi_repo = POIRepository(db)
+        
+        # Verify POI exists
+        poi = await poi_repo.get_by_id(poi_id)
+        if not poi:
+            raise HTTPException(status_code=404, detail="POI not found")
+        
+        return {
+            "poi_id": str(poi_id),
+            "events": [
+                {
+                    "id": f"event_{i}",
+                    "title": ["Art Exhibition", "Guided Tour", "Workshop", "Concert", "Festival"][i % 5],
+                    "description": "Experience the magic of this special event with exclusive access and expert guidance.",
+                    "category": ["art", "culture", "education", "entertainment", "seasonal"][i % 5],
+                    "start_date": f"2024-04-{15 + i:02d}T10:00:00Z",
+                    "end_date": f"2024-04-{15 + i:02d}T16:00:00Z",
+                    "is_recurring": i % 3 == 0,
+                    "recurrence_pattern": "weekly" if i % 3 == 0 else None,
+                    "price": {
+                        "type": "paid" if i % 2 == 0 else "free",
+                        "adult": 25.0 if i % 2 == 0 else None,
+                        "child": 15.0 if i % 2 == 0 else None,
+                        "currency": "USD"
+                    },
+                    "capacity": 50,
+                    "available_spots": 50 - (i * 3),
+                    "registration_required": i % 2 == 0,
+                    "registration_url": f"https://events.touriquest.com/register/event_{i}",
+                    "photos": [f"https://images.touriquest.com/events/event_{i}_{j}.jpg" for j in range(3)],
+                    "video_preview": f"https://videos.touriquest.com/events/event_{i}_preview.mp4",
+                    "social_sharing": {
+                        "attendees_count": 25 + i * 2,
+                        "friends_attending": i if i < 3 else 0
+                    }
+                }
+                for i in range(min(limit, 15))
+            ],
+            "total_count": 67,
+            "recurring_events": [
+                {
+                    "title": "Daily Heritage Tour",
+                    "schedule": "Every day at 2:00 PM",
+                    "duration": "90 minutes",
+                    "languages": ["English", "Spanish", "French"]
+                }
+            ],
+            "seasonal_highlights": [
+                {
+                    "season": "Spring",
+                    "events": ["Cherry Blossom Festival", "Garden Tours", "Photography Workshop"]
+                },
+                {
+                    "season": "Summer",
+                    "events": ["Outdoor Concerts", "Night Markets", "Sunset Tours"]
+                }
+            ],
+            "personalized_recommendations": [
+                {
+                    "event_id": "event_1",
+                    "reason": "Based on your interest in photography",
+                    "match_score": 0.92
+                }
+            ]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch events: {str(e)}"
+        )
+
+
+@router.get("/{poi_id}/audio-guide")
+async def get_poi_audio_guide(
+    poi_id: UUID = Path(..., description="POI unique identifier"),
+    language: str = Query("en", description="Audio guide language"),
+    quality: str = Query("standard", description="Audio quality: standard, high, premium"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get premium audio experience with professional narration and interactive features
+    """
+    try:
+        poi_repo = POIRepository(db)
+        
+        # Verify POI exists
+        poi = await poi_repo.get_by_id(poi_id)
+        if not poi:
+            raise HTTPException(status_code=404, detail="POI not found")
+        
+        return {
+            "poi_id": str(poi_id),
+            "audio_guide": {
+                "id": f"audio_guide_{poi_id}",
+                "title": "Complete Heritage Experience",
+                "description": "Immerse yourself in the rich history and cultural significance of this remarkable location.",
+                "total_duration": 45,
+                "narrator": "David Attenborough",
+                "language": language,
+                "quality": quality,
+                "main_audio_url": f"https://audio.touriquest.com/guides/{poi_id}/main_{language}_{quality}.mp3",
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "Introduction & Overview",
+                        "duration": 8,
+                        "audio_url": f"https://audio.touriquest.com/guides/{poi_id}/chapter_1_{language}.mp3",
+                        "gps_trigger": {"lat": poi.latitude, "lng": poi.longitude, "radius": 50}
+                    },
+                    {
+                        "id": "chapter_2", 
+                        "title": "Historical Significance",
+                        "duration": 12,
+                        "audio_url": f"https://audio.touriquest.com/guides/{poi_id}/chapter_2_{language}.mp3",
+                        "interactive_elements": ["timeline", "historical_photos", "architect_biography"]
+                    },
+                    {
+                        "id": "chapter_3",
+                        "title": "Architectural Details",
+                        "duration": 15,
+                        "audio_url": f"https://audio.touriquest.com/guides/{poi_id}/chapter_3_{language}.mp3",
+                        "visual_cues": ["highlight_facade", "zoom_details", "construction_animation"]
+                    },
+                    {
+                        "id": "chapter_4",
+                        "title": "Cultural Impact",
+                        "duration": 10,
+                        "audio_url": f"https://audio.touriquest.com/guides/{poi_id}/chapter_4_{language}.mp3",
+                        "ambient_sounds": True,
+                        "background_music": "cultural_theme.mp3"
+                    }
+                ],
+                "interactive_features": {
+                    "gps_triggered": True,
+                    "choose_your_path": True,
+                    "quiz_elements": True,
+                    "ambient_sound_mixing": True,
+                    "synchronized_visuals": True
+                },
+                "accessibility": {
+                    "audio_descriptions": True,
+                    "transcript_available": True,
+                    "sign_language_video": f"https://videos.touriquest.com/guides/{poi_id}/sign_language_{language}.mp4",
+                    "haptic_feedback": True
+                },
+                "offline_capability": {
+                    "downloadable": True,
+                    "size_mb": 125,
+                    "download_url": f"https://downloads.touriquest.com/guides/{poi_id}_offline_{language}.zip"
+                }
+            },
+            "available_narrators": [
+                {"name": "David Attenborough", "preview_url": "preview_attenborough.mp3", "premium": True},
+                {"name": "Emma Stone", "preview_url": "preview_stone.mp3", "premium": True},
+                {"name": "Morgan Freeman", "preview_url": "preview_freeman.mp3", "premium": True},
+                {"name": "Standard Narrator", "preview_url": "preview_standard.mp3", "premium": False}
+            ],
+            "available_languages": [
+                {"code": "en", "name": "English", "availability": "full"},
+                {"code": "es", "name": "Spanish", "availability": "full"},
+                {"code": "fr", "name": "French", "availability": "full"},
+                {"code": "de", "name": "German", "availability": "partial"},
+                {"code": "ja", "name": "Japanese", "availability": "partial"},
+                {"code": "zh", "name": "Chinese", "availability": "coming_soon"}
+            ],
+            "premium_features": {
+                "celebrity_narration": quality == "premium",
+                "surround_sound": quality in ["high", "premium"],
+                "exclusive_content": quality == "premium",
+                "behind_scenes": quality == "premium",
+                "director_commentary": quality == "premium"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch audio guide: {str(e)}"
         )

@@ -22,6 +22,12 @@ import {
   UpdatePOIRequest,
   CreatePOIResponse,
   UpdatePOIResponse,
+  PhotoGalleryResponse,
+  SmartHoursResponse,
+  EventsResponse,
+  AudioGuideResponse,
+  NearbyPOI,
+  WeatherInfo,
 } from '../../types/poi';
 import { Review, Media } from '../../types/common';
 
@@ -543,6 +549,33 @@ export class POIService extends BaseService {
   }
 
   /**
+   * Get recommended POIs
+   * GET /api/v1/pois/recommended
+   */
+  async getRecommendedPOIs(limit: number = 10): Promise<PopularPOIsResponse> {
+    try {
+      const params = { limit };
+      const queryString = this.buildQueryString(params);
+      const cacheKey = this.getCacheKey('GET', 'recommended', params);
+      
+      const cached = await this.getFromCache<PopularPOIsResponse>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`recommended${queryString}`);
+      const response = await this.client.get<any>(url);
+      
+      // Cache recommended POIs for 15 minutes
+      await this.setCache(cacheKey, response, 900000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getRecommendedPOIs');
+    }
+  }
+
+  /**
    * Helper method to upload review photos
    */
   private async uploadReviewPhotos(poiId: string, photos: File[]): Promise<string[]> {
@@ -566,6 +599,266 @@ export class POIService extends BaseService {
     } catch (error) {
       console.warn('Failed to upload review photos:', error);
       return [];
+    }
+  }
+
+  /**
+   * Get POI photos with enhanced gallery features
+   * GET /api/v1/pois/{id}/photos
+   */
+  async getPOIPhotos(
+    id: string, 
+    filters?: {
+      category?: string;
+      season?: string;
+      userGenerated?: boolean;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<POIPhotosResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const params = new URLSearchParams();
+      if (filters?.category) params.append('category', filters.category);
+      if (filters?.season) params.append('season', filters.season);
+      if (filters?.userGenerated !== undefined) params.append('user_generated', filters.userGenerated.toString());
+      if (filters?.limit) params.append('limit', filters.limit.toString());
+      if (filters?.offset) params.append('offset', filters.offset.toString());
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/photos`, filters || {});
+      const cached = await this.getFromCache<POIPhotosResponse>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/photos?${params.toString()}`);
+      const response = await this.client.get<PhotoGalleryResponse>(url);
+      
+      // Cache photos for 30 minutes
+      await this.setCache(cacheKey, response, 1800000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getPOIPhotos');
+    }
+  }
+
+  /**
+   * Get smart operating hours with crowd predictions
+   * GET /api/v1/pois/{id}/hours
+   */
+  async getSmartHours(id: string, date?: string): Promise<POIHoursResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/hours`, { date });
+      const cached = await this.getFromCache<POIHoursResponse>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/hours?${params.toString()}`);
+      const response = await this.client.get<SmartHoursResponse>(url);
+      
+      // Cache hours for 15 minutes (more dynamic data)
+      await this.setCache(cacheKey, response, 900000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getSmartHours');
+    }
+  }
+
+  /**
+   * Get enhanced events with social features
+   * GET /api/v1/pois/{id}/events
+   */
+  async getEnhancedEvents(
+    id: string,
+    filters?: {
+      fromDate?: string;
+      toDate?: string;
+      category?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<POIEventsResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const params = new URLSearchParams();
+      if (filters?.fromDate) params.append('from_date', filters.fromDate);
+      if (filters?.toDate) params.append('to_date', filters.toDate);
+      if (filters?.category) params.append('category', filters.category);
+      if (filters?.limit) params.append('limit', filters.limit.toString());
+      if (filters?.offset) params.append('offset', filters.offset.toString());
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/events`, filters || {});
+      const cached = await this.getFromCache<POIEventsResponse>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/events?${params.toString()}`);
+      const response = await this.client.get<EventsResponse>(url);
+      
+      // Cache events for 10 minutes
+      await this.setCache(cacheKey, response, 600000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getEnhancedEvents');
+    }
+  }
+
+  /**
+   * Get premium audio guide experience
+   * GET /api/v1/pois/{id}/audio-guide
+   */
+  async getPremiumAudioGuide(
+    id: string,
+    language: string = 'en',
+    quality: string = 'standard'
+  ): Promise<POIAudioGuideResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const params = new URLSearchParams();
+      params.append('language', language);
+      params.append('quality', quality);
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/audio-guide`, { language, quality });
+      const cached = await this.getFromCache<POIAudioGuideResponse>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/audio-guide?${params.toString()}`);
+      const response = await this.client.get<AudioGuideResponse>(url);
+      
+      // Cache audio guide for 1 hour
+      await this.setCache(cacheKey, response, 3600000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getPremiumAudioGuide');
+    }
+  }
+
+  /**
+   * Get nearby POIs with intelligent recommendations
+   * GET /api/v1/pois/{id}/nearby
+   */
+  async getIntelligentNearby(
+    id: string,
+    radiusKm: number = 2.0,
+    categories?: string[],
+    context?: string,
+    limit: number = 10
+  ): Promise<NearbyPOIsResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const params = new URLSearchParams();
+      params.append('radius_km', radiusKm.toString());
+      if (categories) categories.forEach(cat => params.append('categories', cat));
+      if (context) params.append('context', context);
+      params.append('limit', limit.toString());
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/nearby`, { radiusKm, categories, context, limit });
+      const cached = await this.getFromCache<NearbyPOIsResponse>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/nearby?${params.toString()}`);
+      const response = await this.client.get<NearbyPOI[]>(url);
+      
+      // Cache nearby POIs for 20 minutes
+      await this.setCache(cacheKey, response, 1200000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getIntelligentNearby');
+    }
+  }
+
+  /**
+   * Check in to POI with social features
+   * POST /api/v1/pois/{id}/checkin
+   */
+  async checkIn(
+    id: string,
+    data?: {
+      photo?: File;
+      caption?: string;
+      mood?: string;
+      companions?: number;
+      shareToSocial?: boolean;
+    }
+  ): Promise<VisitRecordResponse> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const formData = new FormData();
+      if (data?.photo) formData.append('photo', data.photo);
+      if (data?.caption) formData.append('caption', data.caption);
+      if (data?.mood) formData.append('mood', data.mood);
+      if (data?.companions) formData.append('companions', data.companions.toString());
+      if (data?.shareToSocial) formData.append('share_to_social', data.shareToSocial.toString());
+      
+      const response = await this.client.post<VisitRecord>(
+        this.buildUrl(`${id}/checkin`),
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      
+      // Clear relevant cache
+      this.clearCache(`${id}/social`);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'checkIn');
+    }
+  }
+
+  /**
+   * Get weather information for POI location
+   * GET /api/v1/pois/{id}/weather
+   */
+  async getWeatherInfo(id: string): Promise<{ data: WeatherInfo }> {
+    try {
+      this.validateRequired({ id }, ['id']);
+      
+      const cacheKey = this.getCacheKey('GET', `${id}/weather`);
+      const cached = await this.getFromCache<{ data: WeatherInfo }>(cacheKey);
+      
+      if (cached) {
+        return cached;
+      }
+
+      const url = this.buildUrl(`${id}/weather`);
+      const response = await this.client.get<WeatherInfo>(url);
+      
+      // Cache weather for 10 minutes
+      await this.setCache(cacheKey, response, 600000);
+      
+      return response;
+    } catch (error) {
+      this.handleError(error, 'getWeatherInfo');
     }
   }
 

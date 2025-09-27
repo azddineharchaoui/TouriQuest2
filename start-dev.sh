@@ -1,13 +1,24 @@
 #!/bin/bash
 # =============================================================================
-# TouriQuest Development Environment - START SCRIPT (WSL/Ubuntu)
+# TouriQuest Development Environment - START SCRIPT (OPTIMIZED)
 # =============================================================================
 
 set -e  # Exit on any error
 
+# Vérifier si le script ultra-optimisé existe et l'utiliser par défaut
+if [ -f "start-dev-ultra.sh" ] && [ "$1" != "--legacy" ]; then
+    echo ""
+    echo "🚀 Utilisation du mode ultra-optimisé pour un démarrage plus rapide..."
+    echo "   (Utilisez --legacy pour forcer l'ancien comportement)"
+    echo ""
+    exec bash start-dev-ultra.sh "$@"
+fi
+
+# Mode legacy (comportement original)
 echo ""
 echo "==============================================="
 echo "   TouriQuest Development Environment Start"
+echo "            (Mode Legacy)"
 echo "==============================================="
 echo ""
 
@@ -38,6 +49,7 @@ echo "✅ Data directories ready"
 echo ""
 echo "[4/5] Starting all services..."
 echo "This may take a few minutes on first run..."
+echo "⚠️  Mode legacy: reconstruction possible de toutes les images"
 
 if ! docker compose -f docker-compose.dev.yml up -d; then
     echo "❌ Failed to start services"

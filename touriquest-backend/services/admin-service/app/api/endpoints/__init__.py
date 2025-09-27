@@ -9,7 +9,14 @@ from app.api.endpoints import (
     analytics,
     reports,
     auth,
-    alerts
+    alerts,
+    system_health,
+    permissions,
+    backup_restore,
+    audit_logging,
+    security_monitoring,
+    system_configuration,
+    automated_reporting
 )
 
 __all__ = [
@@ -21,5 +28,12 @@ __all__ = [
     "analytics",
     "reports",
     "auth",
-    "alerts"
+    "alerts",
+    "system_health",
+    "permissions",
+    "backup_restore",
+    "audit_logging",
+    "security_monitoring",
+    "system_configuration",
+    "automated_reporting"
 ]

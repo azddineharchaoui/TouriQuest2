@@ -127,3 +127,9 @@ site/
 # Local development
 .local/
 local/
+
+# Ignore virtual environment files
+zoomenv/
+
+# Ignore reserved file names
+nul

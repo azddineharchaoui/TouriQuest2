@@ -1,120 +1,48 @@
-// Main API client exports
-import { ApiClient } from './client';
-import { BaseService } from './base';
-import {
-  AuthService,
-  PropertyService,
-  POIService,
-  ExperienceService,
-} from './services';
-
 /**
- * API Client Factory
- * Creates a complete API client with all services
+ * TouriQuest API Client - Main Entry Point
+ * 
+ * Enterprise-grade API client with smart gateway, authentication,
+ * error handling, performance optimization, and developer experience
  */
-export class TouriQuestAPI {
-  public auth: AuthService;
-  public properties: PropertyService;
-  public pois: POIService;
-  public experiences: ExperienceService;
 
-  private client: ApiClient;
+// Core API Client
+export { 
+  ApiClient, 
+  createApiClient, 
+  defaultConfig
+} from './core/ApiClient';
 
-  constructor(options?: {
-    baseURL?: string;
-    timeout?: number;
-    enableLogging?: boolean;
-  }) {
-    // Initialize the HTTP client
-    this.client = new ApiClient(options);
+// Service Factory
+export { 
+  ServiceFactory,
+  createServiceFactory, 
+  getServiceFactory,
+  destroyServiceFactory,
+  developmentConfig,
+  productionConfig
+} from './ServiceFactory';
 
-    // Initialize all services
-    this.auth = new AuthService(this.client);
-    this.properties = new PropertyService(this.client);
-    this.pois = new POIService(this.client);
-    this.experiences = new ExperienceService(this.client);
-  }
+// All Services
+export * from './services';
 
-  /**
-   * Get the underlying HTTP client
-   */
-  getClient(): ApiClient {
-    return this.client;
-  }
+// Core Components
+export { AuthManager } from './core/AuthManager';
+export { CircuitBreaker } from './core/CircuitBreaker';
+export { RequestDeduplicator } from './core/RequestDeduplicator';
+export { CacheManager } from './core/CacheManager';
+export { ErrorHandler } from './core/ErrorHandler';
+export { RetryManager } from './core/RetryManager';
+export { RateLimiter } from './core/RateLimiter';
+export { CompressionManager } from './core/CompressionManager';
 
-  /**
-   * Set authentication tokens
-   */
-  setAuthTokens(accessToken: string, refreshToken?: string): void {
-    this.client.setAuthTokens(accessToken, refreshToken);
-  }
+// Utilities
+export { Logger } from './utils/Logger';
+export { Metrics } from './utils/Metrics';
 
-  /**
-   * Clear authentication tokens
-   */
-  clearAuthTokens(): void {
-    this.client.clearAuthTokens();
-  }
+// Quick start factory function
+export const createTouriQuestAPI = (config?: any) => {
+  return createServiceFactory(config);
+};
 
-  /**
-   * Check if user is authenticated
-   */
-  isAuthenticated(): boolean {
-    return this.client.isAuthenticated();
-  }
-
-  /**
-   * Get current user from localStorage
-   */
-  getCurrentUser(): any | null {
-    try {
-      const userStr = localStorage.getItem('user');
-      return userStr ? JSON.parse(userStr) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Clear all cached data (Note: clearCache is protected, so we'll implement differently)
-   */
-  clearAllCache(): void {
-    // Clear browser cache for this domain
-    if ('caches' in window) {
-      caches.keys().then(names => {
-        names.forEach(name => {
-          caches.delete(name);
-        });
-      });
-    }
-    
-    // Clear localStorage cache items
-    const keys = Object.keys(localStorage);
-    keys.forEach(key => {
-      if (key.startsWith('api_cache_')) {
-        localStorage.removeItem(key);
-      }
-    });
-  }
-}
-
-// Create and export a default instance
-const defaultAPI = new TouriQuestAPI();
-
-export default defaultAPI;
-
-// Named exports
-export { ApiClient, BaseService };
-export {
-  AuthService,
-  PropertyService,
-  POIService,
-  ExperienceService,
-} from './services';
-
-// Re-export all types from type definitions
-export type * from '../types/auth';
-export type * from '../types/property';
-export type * from '../types/poi';
-export type * from '../types/experience';
-export type * from '../types/common';
+// Default export for convenience
+export default ServiceFactory;

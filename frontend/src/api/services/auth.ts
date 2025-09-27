@@ -31,9 +31,57 @@ import {
   OnboardingStatusResponse,
 } from '../../types/auth';
 
+// Enhanced interfaces for comprehensive authentication
+export interface MagicLinkRequest {
+  email: string;
+  redirectUrl?: string;
+  expiresIn?: number;
+}
+
+export interface QRCodeLoginResponse {
+  qrCode: string;
+  sessionId: string;
+  expiresAt: string;
+}
+
+export interface ProgressiveRegistrationData {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  dateOfBirth?: string;
+  interests?: string[];
+  marketingConsent?: boolean;
+  termsAccepted: boolean;
+  gdprConsent: boolean;
+  referralCode?: string;
+  step: number;
+}
+
+export interface IdentityVerificationRequest {
+  documentType: 'passport' | 'driver_license' | 'national_id';
+  documentNumber: string;
+  expiryDate: string;
+  issuingCountry: string;
+  frontImage: File;
+  backImage?: File;
+  selfieImage: File;
+}
+
+export interface SecurityQuestion {
+  id: string;
+  question: string;
+  category: string;
+}
+
+export interface SecurityAnswers {
+  questionId: string;
+  answer: string;
+}
+
 /**
- * Authentication Service
- * Handles all authentication-related API calls
+ * Enhanced Authentication Service
+ * Enterprise-grade authentication system with comprehensive features
  */
 export class AuthService extends BaseService {
   constructor(client: ApiClient) {
@@ -394,6 +442,506 @@ export class AuthService extends BaseService {
       return response;
     } catch (error) {
       this.handleError(error, 'completeOnboarding');
+    }
+  }
+
+  /**
+   * COMPREHENSIVE AUTHENTICATION METHODS - Enterprise-Grade Features
+   */
+
+  /**
+   * 1. Magic Link Authentication (Passwordless)
+   */
+  async sendMagicLink(data: MagicLinkRequest): Promise<{ success: boolean; message: string }> {
+    try {
+      this.validateRequired(data, ['email']);
+      
+      const response = await this.client.post<{ success: boolean; message: string }>(
+        this.buildUrl('magic-link/send'),
+        this.transformRequest(data)
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'sendMagicLink');
+    }
+  }
+
+  async verifyMagicLink(token: string): Promise<LoginResponse> {
+    try {
+      this.validateRequired({ token }, ['token']);
+      
+      const response = await this.client.post<AuthResponse>(
+        this.buildUrl('magic-link/verify'),
+        { token }
+      );
+
+      // Store tokens after successful magic link login
+      if (response.success && response.data.tokens) {
+        this.client.setAuthTokens(
+          response.data.tokens.accessToken,
+          response.data.tokens.refreshToken
+        );
+      }
+
+      return response;
+    } catch (error) {
+      this.handleError(error, 'verifyMagicLink');
+    }
+  }
+
+  /**
+   * 2. QR Code Cross-Device Authentication
+   */
+  async generateQRCodeLogin(): Promise<QRCodeLoginResponse> {
+    try {
+      const response = await this.client.post<QRCodeLoginResponse>(
+        this.buildUrl('qr-code/generate'),
+        {
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language,
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'generateQRCodeLogin');
+    }
+  }
+
+  async authorizeQRCodeLogin(sessionId: string): Promise<{ success: boolean }> {
+    try {
+      this.validateRequired({ sessionId }, ['sessionId']);
+      
+      const response = await this.client.post<{ success: boolean }>(
+        this.buildUrl('qr-code/authorize'),
+        { sessionId }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'authorizeQRCodeLogin');
+    }
+  }
+
+  async pollQRCodeStatus(sessionId: string): Promise<{
+    status: 'pending' | 'authorized' | 'expired';
+    user?: User;
+    tokens?: { accessToken: string; refreshToken: string };
+  }> {
+    try {
+      this.validateRequired({ sessionId }, ['sessionId']);
+      
+      const response = await this.client.get<{
+        status: 'pending' | 'authorized' | 'expired';
+        user?: User;
+        tokens?: { accessToken: string; refreshToken: string };
+      }>(
+        this.buildUrl(`qr-code/status/${sessionId}`)
+      );
+
+      // Store tokens if QR code was authorized
+      if (response.data.status === 'authorized' && response.data.tokens) {
+        this.client.setAuthTokens(
+          response.data.tokens.accessToken,
+          response.data.tokens.refreshToken
+        );
+      }
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'pollQRCodeStatus');
+    }
+  }
+
+  /**
+   * 3. Extended OAuth Providers (Microsoft, GitHub)
+   */
+  async oauthLoginExtended(provider: 'microsoft' | 'github', data?: OAuthRequest): Promise<LoginResponse> {
+    try {
+      const response = await this.client.post<AuthResponse>(
+        this.buildUrl(`oauth/${provider}`),
+        data || {}
+      );
+
+      // Store tokens after successful OAuth login
+      if (response.success && response.data.tokens) {
+        this.client.setAuthTokens(
+          response.data.tokens.accessToken,
+          response.data.tokens.refreshToken
+        );
+      }
+
+      return response;
+    } catch (error) {
+      this.handleError(error, `oauth${provider}`);
+    }
+  }
+
+  /**
+   * 4. Enterprise SSO (SAML/OIDC)
+   */
+  async initiateSAMLLogin(domain: string): Promise<{ redirectUrl: string }> {
+    try {
+      this.validateRequired({ domain }, ['domain']);
+      
+      const response = await this.client.post<{ redirectUrl: string }>(
+        this.buildUrl('saml/initiate'),
+        { domain }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'initiateSAMLLogin');
+    }
+  }
+
+  async initiateOIDCLogin(domain: string): Promise<{ redirectUrl: string }> {
+    try {
+      this.validateRequired({ domain }, ['domain']);
+      
+      const response = await this.client.post<{ redirectUrl: string }>(
+        this.buildUrl('oidc/initiate'),
+        { domain }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'initiateOIDCLogin');
+    }
+  }
+
+  /**
+   * 5. Progressive Registration System
+   */
+  async startProgressiveRegistration(data: ProgressiveRegistrationData): Promise<{
+    success: boolean;
+    userId: string;
+    currentStep: number;
+    nextStep: string;
+    requiresVerification: boolean;
+  }> {
+    try {
+      this.validateRequired(data, ['email', 'termsAccepted', 'gdprConsent']);
+      
+      const response = await this.client.post<{
+        success: boolean;
+        userId: string;
+        currentStep: number;
+        nextStep: string;
+        requiresVerification: boolean;
+      }>(
+        this.buildUrl('registration/progressive/start'),
+        this.transformRequest(data)
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'startProgressiveRegistration');
+    }
+  }
+
+  async updateRegistrationStep(userId: string, step: number, data: any): Promise<{
+    success: boolean;
+    currentStep: number;
+    nextStep?: string;
+    completed: boolean;
+    user?: User;
+    tokens?: { accessToken: string; refreshToken: string };
+  }> {
+    try {
+      this.validateRequired({ userId, step }, ['userId', 'step']);
+      
+      const response = await this.client.post<{
+        success: boolean;
+        currentStep: number;
+        nextStep?: string;
+        completed: boolean;
+        user?: User;
+        tokens?: { accessToken: string; refreshToken: string };
+      }>(
+        this.buildUrl('registration/progressive/update'),
+        { userId, step, data: this.transformRequest(data) }
+      );
+
+      // Store tokens if registration is completed
+      if (response.data.completed && response.data.tokens) {
+        this.client.setAuthTokens(
+          response.data.tokens.accessToken,
+          response.data.tokens.refreshToken
+        );
+      }
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'updateRegistrationStep');
+    }
+  }
+
+  async getRegistrationProgress(userId: string): Promise<{
+    currentStep: number;
+    totalSteps: number;
+    completedSteps: string[];
+    nextStep: string;
+    profileCompleteness: number;
+  }> {
+    try {
+      this.validateRequired({ userId }, ['userId']);
+      
+      const response = await this.client.get<{
+        currentStep: number;
+        totalSteps: number;
+        completedSteps: string[];
+        nextStep: string;
+        profileCompleteness: number;
+      }>(
+        this.buildUrl(`registration/progressive/progress/${userId}`)
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'getRegistrationProgress');
+    }
+  }
+
+  /**
+   * 6. Email/Phone Verification
+   */
+  async sendPhoneVerification(phoneNumber: string, method: 'sms' | 'whatsapp' = 'sms'): Promise<{
+    success: boolean;
+    verificationId: string;
+    expiresIn: number;
+  }> {
+    try {
+      this.validateRequired({ phoneNumber }, ['phoneNumber']);
+      
+      const response = await this.client.post<{
+        success: boolean;
+        verificationId: string;
+        expiresIn: number;
+      }>(
+        this.buildUrl('verification/phone/send'),
+        { phoneNumber: phoneNumber.replace(/\D/g, ''), method }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'sendPhoneVerification');
+    }
+  }
+
+  async verifyPhoneCode(verificationId: string, code: string): Promise<{
+    success: boolean;
+    verified: boolean;
+  }> {
+    try {
+      this.validateRequired({ verificationId, code }, ['verificationId', 'code']);
+      
+      const response = await this.client.post<{
+        success: boolean;
+        verified: boolean;
+      }>(
+        this.buildUrl('verification/phone/verify'),
+        { verificationId, code }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'verifyPhoneCode');
+    }
+  }
+
+  /**
+   * 7. Identity Verification for Premium Features
+   */
+  async submitIdentityVerification(data: IdentityVerificationRequest): Promise<{
+    success: boolean;
+    verificationId: string;
+    status: 'pending' | 'reviewing' | 'approved' | 'rejected';
+    estimatedCompletionTime: string;
+  }> {
+    try {
+      this.validateRequired(data, ['documentType', 'documentNumber', 'expiryDate', 'issuingCountry', 'frontImage', 'selfieImage']);
+      
+      const formData = new FormData();
+      formData.append('documentType', data.documentType);
+      formData.append('documentNumber', data.documentNumber);
+      formData.append('expiryDate', data.expiryDate);
+      formData.append('issuingCountry', data.issuingCountry);
+      formData.append('frontImage', data.frontImage);
+      if (data.backImage) {
+        formData.append('backImage', data.backImage);
+      }
+      formData.append('selfieImage', data.selfieImage);
+
+      const response = await this.client.post<{
+        success: boolean;
+        verificationId: string;
+        status: 'pending' | 'reviewing' | 'approved' | 'rejected';
+        estimatedCompletionTime: string;
+      }>(
+        this.buildUrl('verification/identity/submit'),
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'submitIdentityVerification');
+    }
+  }
+
+  async getIdentityVerificationStatus(verificationId: string): Promise<{
+    status: 'pending' | 'reviewing' | 'approved' | 'rejected';
+    documents: any[];
+    feedback?: string;
+    updatedAt: string;
+  }> {
+    try {
+      this.validateRequired({ verificationId }, ['verificationId']);
+      
+      const response = await this.client.get<{
+        status: 'pending' | 'reviewing' | 'approved' | 'rejected';
+        documents: any[];
+        feedback?: string;
+        updatedAt: string;
+      }>(
+        this.buildUrl(`verification/identity/status/${verificationId}`)
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'getIdentityVerificationStatus');
+    }
+  }
+
+  /**
+   * 8. Security Questions and Account Recovery
+   */
+  async getAvailableSecurityQuestions(): Promise<SecurityQuestion[]> {
+    try {
+      const response = await this.client.get<SecurityQuestion[]>(
+        this.buildUrl('security-questions/available')
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'getAvailableSecurityQuestions');
+    }
+  }
+
+  async setupSecurityQuestions(questions: SecurityAnswers[]): Promise<{ success: boolean }> {
+    try {
+      this.validateRequired({ questions }, ['questions']);
+      
+      const response = await this.client.post<{ success: boolean }>(
+        this.buildUrl('security-questions/setup'),
+        { questions }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'setupSecurityQuestions');
+    }
+  }
+
+  async recoverAccountWithSecurityQuestions(
+    email: string,
+    answers: SecurityAnswers[]
+  ): Promise<{
+    success: boolean;
+    recoveryToken?: string;
+    message: string;
+  }> {
+    try {
+      this.validateRequired({ email, answers }, ['email', 'answers']);
+      
+      const response = await this.client.post<{
+        success: boolean;
+        recoveryToken?: string;
+        message: string;
+      }>(
+        this.buildUrl('recovery/security-questions'),
+        { email: email.toLowerCase().trim(), answers }
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'recoverAccountWithSecurityQuestions');
+    }
+  }
+
+  /**
+   * 9. Referral System Integration
+   */
+  async validateReferralCode(code: string): Promise<{
+    valid: boolean;
+    referrerName?: string;
+    bonus?: {
+      referrer: number;
+      referee: number;
+      currency: string;
+    };
+  }> {
+    try {
+      this.validateRequired({ code }, ['code']);
+      
+      const response = await this.client.get<{
+        valid: boolean;
+        referrerName?: string;
+        bonus?: {
+          referrer: number;
+          referee: number;
+          currency: string;
+        };
+      }>(
+        this.buildUrl(`referral/validate/${code}`)
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'validateReferralCode');
+    }
+  }
+
+  async getUserReferralInfo(): Promise<{
+    referralCode: string;
+    referralCount: number;
+    totalEarnings: number;
+    currency: string;
+    referrals: Array<{
+      name: string;
+      joinedAt: string;
+      status: 'pending' | 'completed';
+      earnings: number;
+    }>;
+  }> {
+    try {
+      const response = await this.client.get<{
+        referralCode: string;
+        referralCount: number;
+        totalEarnings: number;
+        currency: string;
+        referrals: Array<{
+          name: string;
+          joinedAt: string;
+          status: 'pending' | 'completed';
+          earnings: number;
+        }>;
+      }>(
+        this.buildUrl('referral/info')
+      );
+
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'getUserReferralInfo');
     }
   }
 

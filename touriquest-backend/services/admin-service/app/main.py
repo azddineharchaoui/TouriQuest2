@@ -19,7 +19,14 @@ from app.api.endpoints import (
     analytics,
     reports,
     auth,
-    alerts
+    alerts,
+    system_health,
+    permissions,
+    backup_restore,
+    audit_logging,
+    security_monitoring,
+    system_configuration,
+    automated_reporting
 )
 from app.services.websocket_manager import websocket_manager
 from app.utils.monitoring import setup_monitoring
@@ -213,6 +220,48 @@ app.include_router(
     tags=["Alerts"]
 )
 
+app.include_router(
+    system_health.router,
+    prefix="/api/v1/system/health",
+    tags=["System Health"]
+)
+
+app.include_router(
+    permissions.router,
+    prefix="/api/v1/permissions",
+    tags=["Permissions Management"]
+)
+
+app.include_router(
+    backup_restore.router,
+    prefix="/api/v1/backup-restore",
+    tags=["Backup & Restore"]
+)
+
+app.include_router(
+    audit_logging.router,
+    prefix="/api/v1/audit",
+    tags=["Audit Logging"]
+)
+
+app.include_router(
+    security_monitoring.router,
+    prefix="/api/v1/security",
+    tags=["Security Monitoring"]
+)
+
+app.include_router(
+    system_configuration.router,
+    prefix="/api/v1/configuration",
+    tags=["System Configuration"]
+)
+
+app.include_router(
+    automated_reporting.router,
+    prefix="/api/v1/automation",
+    tags=["Automated Reporting"]
+)
+
 
 # WebSocket endpoint
 app.add_websocket_route("/ws/{admin_id}", websocket_manager.websocket_endpoint)
@@ -279,7 +328,17 @@ async def service_info():
             "Audit logging for all admin actions",
             "Real-time dashboard updates",
             "Export functionality for reports",
-            "Alert system for critical issues"
+            "Alert system for critical issues",
+            "System health monitoring with live metrics",
+            "Advanced permissions management",
+            "Backup and restore functionality",
+            "Comprehensive audit trail",
+            "Security monitoring and threat detection",
+            "System configuration management",
+            "Automated reporting and notifications",
+            "Real-time security alerts",
+            "Maintenance mode management",
+            "Feature flag management"
         ],
         "endpoints": {
             "auth": "/api/v1/auth",
@@ -290,7 +349,14 @@ async def service_info():
             "properties": "/api/v1/properties",
             "analytics": "/api/v1/analytics",
             "reports": "/api/v1/reports",
-            "alerts": "/api/v1/alerts"
+            "alerts": "/api/v1/alerts",
+            "system_health": "/api/v1/system/health",
+            "permissions": "/api/v1/permissions",
+            "backup_restore": "/api/v1/backup-restore",
+            "audit_logging": "/api/v1/audit",
+            "security_monitoring": "/api/v1/security",
+            "system_configuration": "/api/v1/configuration",
+            "automated_reporting": "/api/v1/automation"
         },
         "websocket": "/ws/{admin_id}",
         "documentation": "/docs" if settings.ENVIRONMENT != "production" else None

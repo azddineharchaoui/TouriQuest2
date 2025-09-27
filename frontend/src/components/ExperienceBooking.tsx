@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -45,8 +45,11 @@ import {
   List
 } from 'lucide-react';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { ExperienceService } from '../api/services/experience';
+import { ApiClient } from '../api/client';
+import { Experience as ApiExperience } from '../types/experience';
 
-interface Experience {
+interface LocalExperience {
   id: string;
   title: string;
   category: string;
@@ -85,7 +88,7 @@ interface Experience {
   highlights: string[];
 }
 
-const mockExperiences: Experience[] = [
+const mockExperiences: LocalExperience[] = [
   {
     id: '1',
     title: 'Artisan Pottery Workshop with Local Master',
@@ -235,18 +238,248 @@ const categories = [
 
 interface ExperienceBookingProps {
   onBack?: () => void;
-  onExperienceSelect?: (experience: Experience) => void;
+  onExperienceSelect?: (experience: LocalExperience) => void;
 }
 
 export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBookingProps) {
+  // State management
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedExperience, setSelectedExperience] = useState<Experience | null>(null);
+  const [selectedExperience, setSelectedExperience] = useState<LocalExperience | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [participants, setParticipants] = useState(1);
   const [specialRequests, setSpecialRequests] = useState('');
+  
+  // API Data State
+  const [experiences, setExperiences] = useState<LocalExperience[]>(mockExperiences);
+  const [popularExperiences, setPopularExperiences] = useState<LocalExperience[]>([]);
+  const [recommendedExperiences, setRecommendedExperiences] = useState<LocalExperience[]>([]);
+  const [experienceCategories, setExperienceCategories] = useState(categories);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [wishlist, setWishlist] = useState<Set<string>>(new Set());
+  const [comparisonList, setComparisonList] = useState<string[]>([]);
+  
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('recommended');
+
+  // Initialize API service
+  const apiClient = new ApiClient();
+  const experienceService = new ExperienceService(apiClient);
+
+  // Transform API experience to local format
+  const transformApiExperience = (apiExp: ApiExperience): LocalExperience => {
+    return {
+      id: apiExp.id,
+      title: apiExp.name,
+      category: typeof apiExp.category === 'string' ? apiExp.category : apiExp.category.name,
+      description: apiExp.description,
+      shortDescription: apiExp.description.substring(0, 100) + '...',
+      duration: `${apiExp.duration.value} ${apiExp.duration.unit}`,
+      groupSize: `Up to ${apiExp.groupSize.max} people`,
+      difficulty: apiExp.difficulty === 'extreme' ? 'challenging' : apiExp.difficulty as 'easy' | 'moderate' | 'challenging',
+      price: apiExp.pricing?.basePrice || 0,
+      rating: apiExp.rating,
+      reviews: apiExp.reviewCount,
+      images: apiExp.photos?.map(photo => photo.url) || [],
+      location: apiExp.location?.street || apiExp.location?.city || 'Location not specified',
+      meetingPoint: 'Meeting point to be determined',
+      languages: apiExp.languages || ['English'],
+      includes: apiExp.inclusions || [],
+      notIncludes: apiExp.exclusions || [],
+      requirements: apiExp.requirements || [],
+      cancellationPolicy: apiExp.cancellationPolicy || 'Standard cancellation policy applies',
+      host: {
+        name: apiExp.guide?.name || 'Host',
+        avatar: apiExp.guide?.photo || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
+        verified: true,
+        responseRate: 95,
+        experience: `${apiExp.guide?.experience || 5}+ years experience`,
+        bio: apiExp.guide?.bio || 'Experienced guide'
+      },
+      availability: [], // TODO: transform availability data
+      tags: apiExp.tags || [],
+      isEcoFriendly: apiExp.tags?.includes('eco-friendly') || false,
+      instantBook: apiExp.isInstantBooking || false,
+      highlights: apiExp.inclusions?.slice(0, 4) || []
+    };
+  };
+
+  // Load data on component mount
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Load initial data from API
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Load categories and popular experiences in parallel
+      const [categoriesResult, popularResult] = await Promise.allSettled([
+        experienceService.getCategories(),
+        experienceService.getPopularExperiences()
+      ]);
+
+      // Update categories if successful
+      if (categoriesResult.status === 'fulfilled') {
+        // Map API categories to our local category format
+        const apiCategories = categoriesResult.value.data.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          icon: Palette // Default icon, can be mapped based on category type
+        }));
+        setExperienceCategories([
+          { id: 'all', name: 'All Categories', icon: Grid3X3 },
+          ...apiCategories
+        ]);
+      }
+
+      // Update popular experiences if successful
+      if (popularResult.status === 'fulfilled') {
+        const popularItems = popularResult.value.data.items || [];
+        setPopularExperiences(popularItems.map(transformApiExperience));
+      }
+
+      // For now, use popular experiences as recommended (TODO: implement recommendation service)
+      if (popularResult.status === 'fulfilled') {
+        const popularItems = popularResult.value.data.items || [];
+        setRecommendedExperiences(popularItems.slice(0, 5).map(transformApiExperience));
+      }
+
+      // Load all experiences with default search
+      await searchExperiences();
+      
+    } catch (err) {
+      setError('Failed to load experience data. Please try again.');
+      console.error('Error loading initial data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Search experiences with current filters
+  const searchExperiences = async (query = searchQuery, category = selectedCategory) => {
+    setIsLoading(true);
+    
+    try {
+      const searchFilters: any = {
+        q: query || undefined,
+        category: category !== 'all' ? category : undefined,
+        priceMin: filters.priceRange[0],
+        priceMax: filters.priceRange[1],
+        difficulty: filters.difficulty ? [filters.difficulty] : undefined,
+        instantBook: filters.instantBook || undefined,
+        limit: 50
+      };
+
+      // Handle duration filter properly
+      if (filters.duration) {
+        const durationMap: Record<string, any> = {
+          'short': { max: 2, unit: 'hours' },
+          'medium': { min: 2, max: 6, unit: 'hours' },
+          'long': { min: 6, unit: 'hours' },
+          'full-day': { min: 1, unit: 'days' }
+        };
+        searchFilters.duration = durationMap[filters.duration];
+      }
+
+      const result = await experienceService.searchExperiences(searchFilters);
+      // Transform API experiences to local format
+      const apiExperiences = result.data.items || [];
+      setExperiences(apiExperiences.map(transformApiExperience));
+    } catch (err) {
+      console.error('Error searching experiences:', err);
+      // Fall back to mock data on error
+      setExperiences(mockExperiences);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle search input changes
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    // Debounce search
+    const timeoutId = setTimeout(() => {
+      searchExperiences(query);
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  };
+
+  // Handle category selection
+  const handleCategorySelect = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    searchExperiences(searchQuery, categoryId);
+  };
+
+  // Toggle favorite status
+  const toggleFavorite = async (experienceId: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    try {
+      const isFavorite = favorites.has(experienceId);
+      
+      if (isFavorite) {
+        await experienceService.removeFromFavorites(experienceId);
+        setFavorites(prev => {
+          const newFavorites = new Set(prev);
+          newFavorites.delete(experienceId);
+          return newFavorites;
+        });
+      } else {
+        await experienceService.addToFavorites(experienceId);
+        setFavorites(prev => new Set([...prev, experienceId]));
+      }
+    } catch (err) {
+      console.error('Error toggling favorite:', err);
+      // For now, update local state even if API fails
+      setFavorites(prev => {
+        const newFavorites = new Set(prev);
+        if (newFavorites.has(experienceId)) {
+          newFavorites.delete(experienceId);
+        } else {
+          newFavorites.add(experienceId);
+        }
+        return newFavorites;
+      });
+    }
+  };
+
+  // Toggle wishlist status
+  const toggleWishlist = (experienceId: string) => {
+    setWishlist(prev => {
+      const newWishlist = new Set(prev);
+      if (newWishlist.has(experienceId)) {
+        newWishlist.delete(experienceId);
+      } else {
+        newWishlist.add(experienceId);
+      }
+      return newWishlist;
+    });
+  };
+
+  // Toggle comparison list
+  const toggleComparison = (experienceId: string) => {
+    setComparisonList(prev => {
+      if (prev.includes(experienceId)) {
+        return prev.filter(id => id !== experienceId);
+      } else if (prev.length < 3) { // Limit to 3 comparisons
+        return [...prev, experienceId];
+      }
+      return prev;
+    });
+  };
 
   const [filters, setFilters] = useState({
     duration: '',
@@ -278,7 +511,7 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
     // Handle booking logic
   };
 
-  const renderExperienceCard = (experience: Experience) => (
+  const renderExperienceCard = (experience: LocalExperience) => (
     <Card 
       key={experience.id}
       className="overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-300 group"
@@ -307,11 +540,31 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
         </div>
 
         <div className="absolute top-3 right-3 flex space-x-2">
-          <button className="p-2 bg-white/90 hover:bg-white rounded-full transition-colors">
-            <Heart className="w-4 h-4" />
+          <button
+            className="p-2 bg-white/90 hover:bg-white rounded-full transition-colors"
+            onClick={(e) => toggleFavorite(experience.id, e)}
+          >
+            <Heart className={`w-4 h-4 ${favorites.has(experience.id) ? 'fill-red-500 text-red-500' : ''}`} />
           </button>
-          <button className="p-2 bg-white/90 hover:bg-white rounded-full transition-colors">
+          <button 
+            className="p-2 bg-white/90 hover:bg-white rounded-full transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              // TODO: Implement share functionality
+            }}
+          >
             <Share2 className="w-4 h-4" />
+          </button>
+          <button
+            className="p-2 bg-white/90 hover:bg-white rounded-full transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleComparison(experience.id);
+            }}
+          >
+            <Badge className={`${comparisonList.includes(experience.id) ? 'bg-blue-500 text-white' : 'bg-white text-gray-700'} text-xs px-1 py-0.5`}>
+              {comparisonList.includes(experience.id) ? '✓' : '+'}
+            </Badge>
           </button>
         </div>
 
@@ -632,10 +885,28 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
         <div />
       </div>
 
+      {/* Search Bar */}
+      <div className="mb-6">
+        <div className="relative">
+          <Input
+            type="text"
+            placeholder="Search experiences..."
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-10 pr-4 py-2 w-full"
+          />
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
       {/* Category Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 mb-6">
         <button
-          onClick={() => setSelectedCategory('all')}
+          onClick={() => handleCategorySelect('all')}
           className={`flex items-center space-x-2 px-4 py-2 rounded-full border transition-colors ${
             selectedCategory === 'all' 
               ? 'bg-primary text-primary-foreground border-primary' 
@@ -645,12 +916,12 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
           <span>All Experiences</span>
         </button>
         
-        {categories.map((category) => {
+        {experienceCategories.slice(1).map((category) => {
           const Icon = category.icon;
           return (
             <button
               key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
+              onClick={() => handleCategorySelect(category.id)}
               className={`flex items-center space-x-2 px-4 py-2 rounded-full border transition-colors ${
                 selectedCategory === category.id 
                   ? 'bg-primary text-primary-foreground border-primary' 
@@ -664,11 +935,190 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
         })}
       </div>
 
+      {/* Popular and Recommended Sections */}
+      {(popularExperiences.length > 0 || recommendedExperiences.length > 0) && selectedCategory === 'all' && !searchQuery && (
+        <div className="mb-8">
+          {popularExperiences.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Star className="w-5 h-5 mr-2 text-yellow-500" />
+                Popular Experiences
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {popularExperiences.slice(0, 4).map(renderExperienceCard)}
+              </div>
+            </div>
+          )}
+          
+          {recommendedExperiences.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Sparkles className="w-5 h-5 mr-2 text-purple-500" />
+                Recommended for You
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {recommendedExperiences.map(renderExperienceCard)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Comparison Bar */}
+      {comparisonList.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="font-medium">Compare Selected ({comparisonList.length}/3)</span>
+              {comparisonList.map((id) => {
+                const exp = experiences.find(e => e.id === id);
+                return exp ? (
+                  <Badge key={id} variant="secondary" className="text-xs">
+                    {exp.title.substring(0, 20)}...
+                    <button
+                      onClick={() => toggleComparison(id)}
+                      className="ml-1 text-xs hover:text-red-500"
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                ) : null;
+              })}
+            </div>
+            <Button size="sm" disabled={comparisonList.length < 2}>
+              Compare Now
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Filters */}
+      {showFilters && (
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Price Range Filter */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Price Range</label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span>${filters.priceRange[0]}</span>
+                  <span>${filters.priceRange[1]}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="500"
+                  value={filters.priceRange[1]}
+                  onChange={(e) => setFilters(prev => ({
+                    ...prev,
+                    priceRange: [prev.priceRange[0], parseInt(e.target.value)]
+                  }))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Duration Filter */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Duration</label>
+              <Select 
+                value={filters.duration} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, duration: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Any duration" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Any duration</SelectItem>
+                  <SelectItem value="short">Up to 2 hours</SelectItem>
+                  <SelectItem value="medium">2-6 hours</SelectItem>
+                  <SelectItem value="long">6+ hours</SelectItem>
+                  <SelectItem value="full-day">Full day</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Difficulty Filter */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Difficulty</label>
+              <Select 
+                value={filters.difficulty} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, difficulty: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Any difficulty" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Any difficulty</SelectItem>
+                  <SelectItem value="easy">Easy</SelectItem>
+                  <SelectItem value="moderate">Moderate</SelectItem>
+                  <SelectItem value="challenging">Challenging</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Additional Options */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Options</label>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="instant-book"
+                    checked={filters.instantBook}
+                    onChange={(e) => setFilters(prev => ({ ...prev, instantBook: e.target.checked }))}
+                    className="rounded"
+                  />
+                  <label htmlFor="instant-book" className="text-sm">Instant Book</label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="eco-friendly"
+                    checked={filters.ecoFriendly}
+                    onChange={(e) => setFilters(prev => ({ ...prev, ecoFriendly: e.target.checked }))}
+                    className="rounded"
+                  />
+                  <label htmlFor="eco-friendly" className="text-sm">Eco-friendly</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-4 pt-4 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setFilters({
+                  duration: '',
+                  priceRange: [0, 300],
+                  groupSize: '',
+                  difficulty: '',
+                  language: '',
+                  instantBook: false,
+                  ecoFriendly: false
+                });
+                searchExperiences();
+              }}
+            >
+              Clear Filters
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => searchExperiences()}
+            >
+              Apply Filters
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <h2 className="text-xl font-semibold">
-            {filteredExperiences.length} experiences found
+            {isLoading ? 'Loading...' : `${filteredExperiences.length} experiences found`}
           </h2>
           <Button
             variant="outline"
@@ -678,6 +1128,19 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
             <Filter className="w-4 h-4 mr-2" />
             Filters
           </Button>
+          {favorites.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // TODO: Show favorites view
+                console.log('Show favorites:', Array.from(favorites));
+              }}
+            >
+              <Heart className="w-4 h-4 mr-2" />
+              Favorites ({favorites.size})
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center space-x-2">
@@ -698,7 +1161,28 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
             </Button>
           </div>
 
-          <Select defaultValue="recommended">
+          <Select 
+            value={sortBy} 
+            onValueChange={(value) => {
+              setSortBy(value);
+              // Sort the current experiences
+              const sorted = [...experiences].sort((a, b) => {
+                switch (value) {
+                  case 'price-low':
+                    return a.price - b.price;
+                  case 'price-high':
+                    return b.price - a.price;
+                  case 'rating':
+                    return b.rating - a.rating;
+                  case 'duration':
+                    return a.duration.localeCompare(b.duration);
+                  default:
+                    return 0;
+                }
+              });
+              setExperiences(sorted);
+            }}
+          >
             <SelectTrigger className="w-40">
               <ArrowUpDown className="w-4 h-4 mr-2" />
               <SelectValue />
@@ -715,9 +1199,73 @@ export function ExperienceBooking({ onBack, onExperienceSelect }: ExperienceBook
       </div>
 
       {/* Results */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredExperiences.map(renderExperienceCard)}
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i} className="overflow-hidden">
+              <div className="animate-pulse">
+                <div className="h-48 bg-gray-200" />
+                <div className="p-4 space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-3/4" />
+                  <div className="h-3 bg-gray-200 rounded w-1/2" />
+                  <div className="flex justify-between">
+                    <div className="h-4 bg-gray-200 rounded w-1/4" />
+                    <div className="h-4 bg-gray-200 rounded w-1/4" />
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <div className="text-red-500 mb-4">
+            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold mb-2">Something went wrong</h3>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={() => loadInitialData()}>
+            Try Again
+          </Button>
+        </div>
+      ) : filteredExperiences.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-gray-400 mb-4">
+            <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold mb-2">No experiences found</h3>
+          <p className="text-gray-600 mb-4">
+            Try adjusting your search criteria or explore different categories.
+          </p>
+          <Button 
+            variant="outline"
+            onClick={() => {
+              setSearchQuery('');
+              setSelectedCategory('all');
+              setFilters({
+                duration: '',
+                priceRange: [0, 300],
+                groupSize: '',
+                difficulty: '',
+                language: '',
+                instantBook: false,
+                ecoFriendly: false
+              });
+              searchExperiences('', 'all');
+            }}
+          >
+            Clear All Filters
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredExperiences.map(renderExperienceCard)}
+        </div>
+      )}
 
       {/* Experience Detail Modal */}
       {renderExperienceDetail()}

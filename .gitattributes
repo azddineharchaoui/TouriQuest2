@@ -1,0 +1,4 @@
+# Disable text processing for virtual environment files
+zoomenv/** -text
+
+nul -text
